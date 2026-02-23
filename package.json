@@ -6,7 +6,7 @@
   "description": "Web-based shortwave radio browser with live SDRplay tuning via SDRconnect",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "concurrently npm:dev:server npm:dev:client",
     "dev:client": "vite",
     "dev:server": "tsx watch src/server/index.ts",
     "build": "vite build && tsc -p tsconfig.server.json",
