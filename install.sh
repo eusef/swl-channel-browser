@@ -65,4 +65,4 @@ EOF
 
 echo ""
 echo "Done! Run 'npm run dev' to start the app."
-echo "Then open http://localhost:3000 in your browser."
+echo "Then open http://localhost:5173 in your browser."

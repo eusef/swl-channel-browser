@@ -46,7 +46,7 @@ app.get('*', (_req, res) => {
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(404).json({ error: 'Client build not found. Run npm run build or use npm run dev for development.' });
+    res.status(404).json({ error: 'Client build not found. If running npm run dev, open http://localhost:5173 instead. For production, run npm run build first, then npm start.' });
   }
 });
 

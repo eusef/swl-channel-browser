@@ -47,13 +47,22 @@ SDRCONNECT_HOST=127.0.0.1
 SDRCONNECT_PORT=5454
 ```
 
-Run it:
+Run in development mode:
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:3000` on any device on your network.
+Open `http://localhost:5173` on any device on your network.
+
+For production, build and start the server instead:
+
+```bash
+npm run build
+npm start
+```
+
+In production mode, open `http://localhost:3000`.
 
 The app downloads the current EiBi schedule automatically on first launch and refreshes it weekly. No manual data setup needed.
 

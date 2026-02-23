@@ -27,7 +27,7 @@ SDRCONNECT_PORT=5454
 
 Write-Host ""
 Write-Host "Done! Run 'npm run dev' to start the app." -ForegroundColor Green
-Write-Host "Then open http://localhost:3000 in your browser." -ForegroundColor Green
+Write-Host "Then open http://localhost:5173 in your browser." -ForegroundColor Green
 Write-Host ""
 Write-Host "NOTE: On first run, Windows Firewall will ask to allow Node.js." -ForegroundColor Yellow
 Write-Host "Click 'Allow access' so other devices on your network can connect." -ForegroundColor Yellow
