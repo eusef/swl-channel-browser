@@ -1,26 +1,31 @@
 # SWL Channel Browser
 
-A web-based shortwave radio browser that shows you what's on the air right now. Connects to SDRplay hardware via SDRconnect for live tuning, audio streaming, and signal visualization.
+Know what's on the air. Tune with one tap. Listen in your browser.
 
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+The SWL Channel Browser is a web app for shortwave listeners who use SDRplay receivers. It pairs the [EiBi schedule database](http://www.eibispace.de/) with your SDRplay hardware via [SDRconnect](https://www.sdrplay.com/sdrconnect/), so you can browse active broadcasts, tap a station, and hear it - all from your phone, tablet, or laptop.
 
-![SWL Channel Browser](screenshot.png)
-![SWL Channel Browser](screenshot2.png)
+SDRconnect already gives you a capable radio UI. This app adds the piece it's missing: **schedule-aware tuning.** Instead of manually scanning frequencies, you see a live list of what's broadcasting right now and tune with a single tap.
 
-## What It Does
+## What You Can Do
 
-- **On Now / Coming Up** - Browse thousands of shortwave broadcasts from the EiBi schedule database, filtered by current UTC time
-- **Live Audio** - Tune and listen to broadcasts through your SDRplay receiver with AM, SSB, CW, FM demodulation
-- **Spectrum & Waterfall** - Real-time spectrum display and scrolling waterfall spectrogram
-- **Propagation Data** - Solar flux and geomagnetic conditions from NOAA, with per-band quality badges
-- **Favorites & Logging** - Save stations, add notes, log receptions with signal metrics, export as CSV
-- **PWA** - Installable on mobile and desktop, responsive layout with dark theme
+**Browse live broadcasts** - See every active shortwave broadcast at the current UTC time, pulled from the EiBi database (~10,000 stations). Filter by band, language, or target region. Search by station name or frequency. Switch between "On Now" and "Coming Up" views (1, 3, or 6 hours ahead).
+
+**Tune and listen with one tap** - Tap any station to tune your SDRplay receiver and start listening in your browser. The app automatically selects the right demodulation mode (AM, SAM, USB, LSB, CW, NFM, WFM) and bandwidth for each station.
+
+**Stream audio to any device** - Listen through your phone, tablet, or laptop over WiFi. 48kHz audio streaming with volume control, mute, and in-browser recording (WebM/Opus with WAV export).
+
+**See signal conditions** - Live signal power (dBm) and SNR (dB) meter updates in real time. Real-time spectrum display and scrolling waterfall spectrogram. Solar flux and geomagnetic data from NOAA with per-band condition badges (Good/Fair/Poor).
+
+**Save and log** - Favorite stations for quick access. Log receptions with auto-captured signal metrics and personal notes. Export your log as CSV.
+
+**Use it like a native app** - Installable as a PWA on iPhone, iPad, Android, or desktop. Dark theme optimized for listening sessions. Responsive layout with safe area support for notched iPhones.
 
 ## Requirements
 
-- [SDRplay](https://www.sdrplay.com/) receiver (RSP1A, RSP1B, RSPdx, RSPdx-R2, RSPduo, etc.)
-- [SDRconnect](https://www.sdrplay.com/sdrconnect/) running with WebSocket API enabled
+- Any [SDRplay receiver](https://www.sdrplay.com/) (RSP1B, RSPdx-R2, RSPduo, nRSP-ST, or discontinued models)
+- [SDRconnect](https://www.sdrplay.com/sdrconnect/) v1.0.6+ running on the same network
 - Node.js 18+
+- A browser on the same LAN as SDRconnect (phone, tablet, or computer)
 
 ## Quick Start
 
@@ -34,51 +39,57 @@ Create a `.env` file:
 
 ```
 PORT=3000
-EIBI_CSV_URL=http://www.eibispace.de/dx/sked-b25.csv
-EIBI_REFRESH_HOURS=168
 SDRCONNECT_HOST=127.0.0.1
 SDRCONNECT_PORT=5454
 ```
 
-Run in development mode:
+Run it:
 
 ```bash
 npm run dev
 ```
 
-Build and run for production:
+Open `http://localhost:3000` on any device on your network.
 
-```bash
-npm run build
-npm start
-```
-
-Open `http://localhost:3000` in your browser.
+The app downloads the current EiBi schedule automatically on first launch and refreshes it weekly. No manual data setup needed.
 
 ## Configuration
 
-| Variable | Default | Description |
-|---|---|---|
+| Setting | Default | What it does |
+|---------|---------|--------------|
 | `PORT` | `3000` | Server port |
-| `EIBI_CSV_URL` | EiBi B25 schedule | URL for the EiBi CSV schedule file |
-| `EIBI_REFRESH_HOURS` | `168` | Hours between schedule refreshes (168 = weekly) |
-| `SDRCONNECT_HOST` | `127.0.0.1` | SDRconnect host address |
+| `SDRCONNECT_HOST` | `127.0.0.1` | IP or hostname of the machine running SDRconnect |
 | `SDRCONNECT_PORT` | `5454` | SDRconnect WebSocket port |
 
-Additional settings (demod mode, antenna port, theme, time format) are configurable in the app's Settings page.
+Additional settings are available in the app's Settings page: default demodulation mode, antenna port selection (for multi-port receivers like RSPdx-R2 and RSPduo), time format (UTC/local), theme (dark/light), and auto-play preferences.
 
-## Tech Stack
+For nRSP-ST users: set the nRSP-ST IP in Settings to get an "Advanced Controls" link to the built-in web UI on port 9001.
 
-- **Frontend:** React 18, TypeScript, Tailwind CSS, Vite
-- **Backend:** Express, TypeScript
-- **Audio:** Web Audio API (AudioWorklet + ScriptProcessor fallback)
-- **Data:** EiBi shortwave schedules, NOAA Space Weather Prediction Center
+## How It Works
+
+The app connects to two services:
+
+1. **Backend server** (port 3000) - serves the web app and schedule data from the EiBi database via REST API
+2. **SDRconnect** (port 5454) - controls your SDRplay receiver via WebSocket for tuning, audio streaming, and signal data
+
+Your browser talks directly to both. No proxy, no extra software. The backend has no SDRplay dependencies, so it can run on any machine - including a Raspberry Pi for an always-on listening station.
+
+## Supported Hardware
+
+| Model | Price (USD) | Link | Notes |
+|-------|-------------|------|-------|
+| RSP1B | ~$155 | [sdrplay.com/rsp1b](https://www.sdrplay.com/rsp1b/) | Entry-level, 1 antenna port |
+| RSPdx-R2 | ~$280 | [sdrplay.com/rspdx-r2](https://www.sdrplay.com/rspdx-r2/) | 3 antenna ports, HDR mode |
+| RSPduo | ~$300 | [sdrplay.com/rspduo](https://www.sdrplay.com/rspduo/) | Dual tuner |
+| nRSP-ST | ~$500 | [sdrplay.com/nrspst](https://www.sdrplay.com/nrspst/) | Networked, standalone with built-in web UI |
+
+Discontinued models (RSP1A, RSP2, RSP2pro, RSPdx) are also supported through SDRconnect.
 
 ## Data Attribution
 
-- Station schedules from [EiBi Short-wave Schedules](http://www.eibispace.de/) by Eike Bierwirth
-- Propagation data from [NOAA Space Weather Prediction Center](https://www.swpc.noaa.gov/)
+- Station schedules: [EiBi Short-wave Schedules](http://www.eibispace.de/) by Eike Bierwirth (free to copy and distribute)
+- Propagation data: [NOAA Space Weather Prediction Center](https://www.swpc.noaa.gov/)
 
 ## License
 
-MIT - see [LICENSE](LICENSE)
+MIT
