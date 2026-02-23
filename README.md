@@ -6,6 +6,10 @@ The SWL Channel Browser is a web app for shortwave listeners who use SDRplay rec
 
 SDRconnect already gives you a capable radio UI. This app adds the piece it's missing: **schedule-aware tuning.** Instead of manually scanning frequencies, you see a live list of what's broadcasting right now and tune with a single tap.
 
+![SWL Channel Browser](screenshot.png)
+
+![SWL Channel Browser](screenshot2.png)
+
 ## What You Can Do
 
 **Browse live broadcasts** - See every active shortwave broadcast at the current UTC time, pulled from the EiBi database (~10,000 stations). Filter by band, language, or target region. Search by station name or frequency. Switch between "On Now" and "Coming Up" views (1, 3, or 6 hours ahead).
