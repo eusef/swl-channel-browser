@@ -57,6 +57,19 @@ Open `http://localhost:3000` on any device on your network.
 
 The app downloads the current EiBi schedule automatically on first launch and refreshes it weekly. No manual data setup needed.
 
+## Windows Quick Start
+
+Open PowerShell as Administrator and paste the contents of [`install-windows.ps1`](install-windows.ps1), or run:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+powershell -File install-windows.ps1
+```
+
+This installs Git and Node.js via `winget`, clones the repo, runs `npm install`, and creates the `.env` with defaults.
+
+On first run of `npm run dev`, Windows Firewall will prompt you to allow Node.js. Click "Allow access" so other devices on your network can connect.
+
 ## Configuration
 
 | Setting | Default | What it does |
