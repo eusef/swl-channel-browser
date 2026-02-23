@@ -22,7 +22,7 @@ A web-based shortwave radio browser that shows you what's on the air right now. 
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/swl-channel-browser.git
+git clone https://github.com/eusef/swl-channel-browser.git
 cd swl-channel-browser
 npm install
 ```
