@@ -57,6 +57,16 @@ Open `http://localhost:3000` on any device on your network.
 
 The app downloads the current EiBi schedule automatically on first launch and refreshes it weekly. No manual data setup needed.
 
+## Mac/Linux Quick Install
+
+If you don't have Git and Node.js installed, the install script handles everything:
+
+```bash
+bash install.sh
+```
+
+Uses Homebrew on Mac, apt/dnf on Linux. If Git and Node.js are already installed, it skips straight to cloning and setup.
+
 ## Windows Quick Start
 
 Open PowerShell as Administrator and paste the contents of [`install-windows.ps1`](install-windows.ps1), or run:
