@@ -4,6 +4,9 @@ A web-based shortwave radio browser that shows you what's on the air right now. 
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
+![SWL Channel Browser](screenshot.png)
+![SWL Channel Browser](screenshot2.png)
+
 ## What It Does
 
 - **On Now / Coming Up** - Browse thousands of shortwave broadcasts from the EiBi schedule database, filtered by current UTC time
