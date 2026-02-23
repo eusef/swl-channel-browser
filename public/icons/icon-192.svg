@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="24" fill="#0f172a"/>
+  <text x="96" y="110" font-family="monospace" font-size="80" fill="#3b82f6" text-anchor="middle" font-weight="bold">SW</text>
+  <text x="96" y="150" font-family="sans-serif" font-size="24" fill="#64748b" text-anchor="middle">RADIO</text>
+</svg>

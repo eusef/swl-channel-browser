@@ -1,0 +1,9 @@
+node_modules
+dist
+dev-dist
+data/*.csv
+data/*.json
+.env
+.env.local
+.DS_Store
+*.log
