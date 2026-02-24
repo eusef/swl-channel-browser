@@ -101,6 +101,12 @@ Additional settings are available in the app's Settings page: default demodulati
 
 For nRSP-ST users: set the nRSP-ST IP in Settings to get an "Advanced Controls" link to the built-in web UI on port 9001.
 
+## Raspberry Pi Deployment
+
+Want an always-on listening station? A Raspberry Pi 4 can run both the backend and SDRconnect with your SDRplay receiver connected via USB. Browse and tune from any device on your network.
+
+See [INSTALL-RASPBERRY-PI.md](INSTALL-RASPBERRY-PI.md) for the full setup guide. The short version: Pi OS Desktop 64-bit, SDRconnect in GUI mode (not `--server` mode), VNC for the display server, and xdotool to auto-connect the SDR device on boot.
+
 ## How It Works
 
 The app connects to two services:
@@ -108,7 +114,7 @@ The app connects to two services:
 1. **Backend server** (port 3000) - serves the web app and schedule data from the EiBi database via REST API
 2. **SDRconnect** (port 5454) - controls your SDRplay receiver via WebSocket for tuning, audio streaming, and signal data
 
-Your browser talks directly to both. No proxy, no extra software. The backend has no SDRplay dependencies, so it can run on any machine - including a Raspberry Pi for an always-on listening station.
+Your browser talks directly to both. No proxy, no extra software. The backend has no SDRplay dependencies, so it can run on any machine.
 
 ## Supported Hardware
 
