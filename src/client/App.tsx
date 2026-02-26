@@ -11,6 +11,7 @@ import { useLog } from './hooks/useLog';
 import { useSpectrum } from './hooks/useSpectrum';
 import { usePropagation } from './hooks/usePropagation';
 import { useRecording } from './hooks/useRecording';
+import { useManualEntries } from './hooks/useManualEntries';
 import { fetchConfig } from './lib/schedule';
 import ClockBar from './components/ClockBar';
 import NowPlayingBar from './components/NowPlayingBar';
@@ -22,6 +23,8 @@ import LogPage from './components/LogPage';
 import SettingsPage from './components/SettingsPage';
 import SpectrumPanel from './components/SpectrumPanel';
 import PropagationBar from './components/PropagationBar';
+import ManualTuneForm from './components/ManualTuneForm';
+import ManualEntryList from './components/ManualEntryList';
 import Toast from './components/Toast';
 
 type ViewMode = 'now' | 'upcoming';
@@ -67,6 +70,8 @@ function MainView() {
   const { binsRef, frameCountRef, peakShiftRef } = useSpectrum(getClient, status, spectrumEnabled);
   const { propagation, loading: propagationLoading } = usePropagation();
   const recording = useRecording();
+  const manualEntries = useManualEntries();
+  const [manualFormCollapsed, setManualFormCollapsed] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const prevRecordingCountRef = useRef(0);
@@ -173,6 +178,12 @@ function MainView() {
     setSpectrumExpanded(expanded);
   }, []);
 
+  const handleManualTune = useCallback((params: { freq_khz: number; station?: string; demod_mode: DemodMode; bandwidth: number }) => {
+    const entry = manualEntries.add(params);
+    const broadcast = manualEntries.toBroadcast(entry);
+    handleTune(broadcast);
+  }, [manualEntries, handleTune]);
+
   const handleConfigChange = useCallback((newConfig: AppConfig) => {
     setConfig(prev => {
       // If default_demod changed while we have a tuned station, apply immediately
@@ -240,6 +251,12 @@ function MainView() {
         onExpandedChange={handleSpectrumExpandedChange}
       />
 
+      <ManualTuneForm
+        onSubmit={handleManualTune}
+        collapsed={manualFormCollapsed}
+        onCollapsedChange={setManualFormCollapsed}
+      />
+
       <div className="flex flex-col flex-1 min-h-0 overflow-auto">
       <Routes>
         <Route
@@ -261,6 +278,14 @@ function MainView() {
                 onModeChange={setViewMode}
                 onHoursChange={setLookaheadHours}
                 count={broadcasts.length}
+              />
+              <ManualEntryList
+                entries={manualEntries.entries}
+                tunedFreq={tunedBroadcast?.freq_khz ?? null}
+                onTune={handleTune}
+                onRemove={manualEntries.remove}
+                onClear={manualEntries.clear}
+                toBroadcast={manualEntries.toBroadcast}
               />
               <StationList
                 broadcasts={broadcasts}

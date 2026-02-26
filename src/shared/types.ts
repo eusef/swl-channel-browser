@@ -78,6 +78,16 @@ export interface FiltersResponse {
   targets: { code: string; name: string }[];
 }
 
+export interface ManualEntry {
+  id: string;
+  freq_khz: number;
+  freq_hz: number;
+  station: string;
+  demod_mode: DemodMode;
+  bandwidth: number;
+  added_at: string;
+}
+
 export interface ScheduleFilters {
   band?: string;
   lang?: string;
