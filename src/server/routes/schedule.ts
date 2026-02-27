@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getNow, getUpcoming, search, getAvailableFilters, loadBroadcasts, getBroadcastCount, getScheduleStatus } from '../services/schedule-store.js';
+import { getNow, getUpcoming, getNearby, search, getAvailableFilters, loadBroadcasts, getBroadcastCount, getScheduleStatus } from '../services/schedule-store.js';
 import { fetchEibiCsv, getCachedCsv } from '../services/eibi-fetcher.js';
 import { parseEibiCsv } from '../services/eibi-parser.js';
 import { getCurrentUtcDisplay } from '../lib/time.js';
@@ -37,6 +37,24 @@ router.get('/upcoming', (req: Request, res: Response) => {
   res.json({
     count: broadcasts.length,
     utc_time: getCurrentUtcDisplay(),
+    broadcasts,
+  });
+});
+
+router.get('/nearby', (req: Request, res: Response) => {
+  const freqKhz = parseFloat(req.query.freq_khz as string);
+  const spanKhz = parseFloat(req.query.span_khz as string) || 1000;
+
+  if (!freqKhz || isNaN(freqKhz)) {
+    res.json({ count: 0, broadcasts: [] });
+    return;
+  }
+
+  const broadcasts = getNearby(freqKhz, spanKhz);
+  res.json({
+    count: broadcasts.length,
+    center_khz: freqKhz,
+    span_khz: spanKhz,
     broadcasts,
   });
 });

@@ -1,4 +1,4 @@
-import { ScheduleResponse, FiltersResponse, AppConfig, ScheduleFilters, Favorite, ReceptionLogEntry, PropagationData, StationList } from '../../shared/types';
+import { Broadcast, ScheduleResponse, FiltersResponse, AppConfig, ScheduleFilters, Favorite, ReceptionLogEntry, PropagationData, StationList } from '../../shared/types';
 
 const API_BASE = '/api';
 
@@ -25,6 +25,19 @@ export async function fetchScheduleUpcoming(hours: number, filters: ScheduleFilt
 export async function fetchScheduleSearch(q: string): Promise<ScheduleResponse> {
   const res = await fetch(`${API_BASE}/schedule/search?q=${encodeURIComponent(q)}`);
   if (!res.ok) throw new Error(`Failed to search: ${res.status}`);
+  return res.json();
+}
+
+export interface NearbyResponse {
+  count: number;
+  center_khz: number;
+  span_khz: number;
+  broadcasts: Broadcast[];
+}
+
+export async function fetchNearbyBroadcasts(freqKhz: number, spanKhz: number = 1000): Promise<NearbyResponse> {
+  const res = await fetch(`${API_BASE}/schedule/nearby?freq_khz=${freqKhz}&span_khz=${spanKhz}`);
+  if (!res.ok) throw new Error(`Failed to fetch nearby: ${res.status}`);
   return res.json();
 }
 

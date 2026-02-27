@@ -9,6 +9,7 @@ import { useAudio } from './hooks/useAudio';
 import { useLists } from './hooks/useLists';
 import { useLog } from './hooks/useLog';
 import { useSpectrum } from './hooks/useSpectrum';
+import { useNearbyBroadcasts } from './hooks/useNearbyBroadcasts';
 import { usePropagation } from './hooks/usePropagation';
 import { useRecording } from './hooks/useRecording';
 import { useManualEntries } from './hooks/useManualEntries';
@@ -50,6 +51,8 @@ function MainView() {
   const [lookaheadHours, setLookaheadHours] = useState(3);
   const [tunedBroadcast, setTunedBroadcast] = useState<Broadcast | null>(null);
   const [spectrumExpanded, setSpectrumExpanded] = useState(false);
+  const [deviceCenterHz, setDeviceCenterHz] = useState<number | null>(null);
+  const [deviceSampleRate, setDeviceSampleRate] = useState<number | null>(null);
   const tuneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retuneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTunedFreqRef = useRef<number>(0);
@@ -69,8 +72,28 @@ function MainView() {
   const audio = useAudio(getClient);
   const listsHook = useLists();
   const log = useLog();
+  // Track device center frequency from SDRconnect
+  useEffect(() => {
+    const client = getClient();
+    if (!client) return;
+    const unsub = client.onPropertyChange((prop, value) => {
+      if (prop === 'device_center_frequency') {
+        const hz = parseFloat(value);
+        if (!isNaN(hz) && hz > 0) setDeviceCenterHz(hz);
+      } else if (prop === 'device_sample_rate') {
+        const hz = parseFloat(value);
+        if (!isNaN(hz) && hz > 0) setDeviceSampleRate(hz);
+      }
+    });
+    return unsub;
+  }, [getClient, status]);
+
   const spectrumEnabled = spectrumExpanded && tunedBroadcast !== null;
   const { binsRef, frameCountRef, peakShiftRef } = useSpectrum(getClient, status, spectrumEnabled);
+  const nearbyBroadcasts = useNearbyBroadcasts(
+    spectrumEnabled ? (deviceCenterHz ? Math.round(deviceCenterHz / 1000) : null) : null,
+    deviceSampleRate ? Math.round(deviceSampleRate / 1000) : 1000,
+  );
   const { propagation, loading: propagationLoading } = usePropagation();
   const recording = useRecording();
   const manualEntries = useManualEntries();
@@ -234,6 +257,60 @@ function MainView() {
     setSpectrumExpanded(expanded);
   }, []);
 
+  // Spectrum/waterfall click-to-tune: creates an ad-hoc broadcast for the clicked frequency
+  const handleSpectrumTune = useCallback((freqHz: number) => {
+    const freqKhz = freqHz / 1000;
+    // Check if a nearby EiBi broadcast matches (within 1 kHz)
+    const match = nearbyBroadcasts.find(
+      b => Math.abs(b.freq_khz - freqKhz) < 1,
+    );
+    if (match) {
+      handleTune(match);
+    } else {
+      // Create ad-hoc broadcast entry
+      const demod: DemodMode = config?.default_demod || 'SAM';
+      const adHoc: Broadcast = {
+        freq_khz: Math.round(freqKhz * 10) / 10,
+        freq_hz: Math.round(freqHz),
+        time_start: '',
+        time_end: '',
+        days: '',
+        country_code: '',
+        station: `${(freqKhz).toFixed(1)} kHz`,
+        language: '',
+        language_name: '',
+        target: '',
+        target_name: '',
+        remarks: 'Waterfall tune',
+        band: '',
+        demod_mode: demod,
+        bandwidth: bandwidthForMode(demod),
+        seasonal_start: '',
+        seasonal_end: '',
+      };
+      handleTune(adHoc);
+    }
+  }, [nearbyBroadcasts, handleTune, config?.default_demod]);
+
+  // Spectrum/waterfall drag-to-pan: tunes VFO once on drag release
+  const handleSpectrumDragEnd = useCallback((deltaHz: number) => {
+    const client = getClient();
+    if (!client || !tunedBroadcast) return;
+
+    const newFreqHz = Math.max(1000, tunedBroadcast.freq_hz + Math.round(deltaHz));
+    const newFreqKhz = newFreqHz / 1000;
+
+    client.tune(newFreqHz);
+    setTunedBroadcast(prev => prev ? {
+      ...prev,
+      freq_hz: newFreqHz,
+      freq_khz: Math.round(newFreqKhz * 10) / 10,
+      station: `${newFreqKhz.toFixed(1)} kHz`,
+      remarks: 'Waterfall drag',
+    } : null);
+    lastTunedFreqRef.current = newFreqKhz;
+  }, [getClient, tunedBroadcast]);
+
   const handleManualTune = useCallback((params: { freq_khz: number; station?: string; demod_mode: DemodMode; bandwidth: number }) => {
     const entry = manualEntries.add(params);
     const broadcast = manualEntries.toBroadcast(entry);
@@ -305,7 +382,13 @@ function MainView() {
         frameCountRef={frameCountRef}
         peakShiftRef={peakShiftRef}
         tunedFreqKhz={tunedBroadcast?.freq_khz ?? null}
+        centerFreqHz={deviceCenterHz}
+        spanHz={deviceSampleRate}
+        vfoFreqHz={tunedBroadcast?.freq_hz ?? null}
+        nearbyBroadcasts={nearbyBroadcasts}
         onExpandedChange={handleSpectrumExpandedChange}
+        onTuneToFreq={handleSpectrumTune}
+        onDragEnd={handleSpectrumDragEnd}
       />
 
       <ManualTuneForm

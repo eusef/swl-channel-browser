@@ -115,6 +115,23 @@ export function getUpcoming(hours: number, filters: ScheduleFilters): Broadcast[
   return applyFilters(sorted, { ...filters, sort: filters.sort || 'time' });
 }
 
+/**
+ * Get broadcasts currently on-air within a frequency range.
+ * Used by the interactive waterfall to overlay EiBi station markers.
+ */
+export function getNearby(centerKhz: number, spanKhz: number): Broadcast[] {
+  const utcTime = getCurrentUtcHHMM();
+  const utcDate = new Date();
+  const minKhz = centerKhz - spanKhz / 2;
+  const maxKhz = centerKhz + spanKhz / 2;
+
+  return broadcasts.filter(b =>
+    b.freq_khz >= minKhz &&
+    b.freq_khz <= maxKhz &&
+    isOnNow(b, utcTime, utcDate)
+  ).sort((a, b) => a.freq_khz - b.freq_khz);
+}
+
 export function search(query: string): Broadcast[] {
   if (!query || query.length < 2) return [];
 

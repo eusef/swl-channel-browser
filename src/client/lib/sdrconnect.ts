@@ -23,6 +23,12 @@ export class SDRConnectClient {
   private spectrumCallbacks: SpectrumCallback[] = [];
   private connectionCallbacks: ConnectionCallback[] = [];
 
+  /** Device center frequency in Hz (the true center of the spectrum span) */
+  private _deviceCenterHz: number | null = null;
+
+  /** Device sample rate in Hz (determines spectrum span width) */
+  private _deviceSampleRate: number | null = null;
+
   // Diagnostic: log first few text messages to understand SDRconnect event format
   private _textMsgCount = 0;
 
@@ -52,6 +58,9 @@ export class SDRConnectClient {
 
         // Read initial state
         this.getProperty('device_vfo_frequency');
+        this.getProperty('device_center_frequency');
+        this.getProperty('device_sample_rate');
+        this.getProperty('iq_sample_rate');
         this.getProperty('demodulator');
         this.getProperty('filter_bandwidth');
 
@@ -133,6 +142,16 @@ export class SDRConnectClient {
     return this.wsUrl;
   }
 
+  /** Get the device center frequency in Hz (null if not yet received) */
+  getDeviceCenterHz(): number | null {
+    return this._deviceCenterHz;
+  }
+
+  /** Get the device sample rate in Hz (null if not yet received) */
+  getDeviceSampleRate(): number | null {
+    return this._deviceSampleRate;
+  }
+
   private send(msg: object): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
@@ -155,6 +174,8 @@ export class SDRConnectClient {
       property: 'device_vfo_frequency',
       value: String(freqHz),
     });
+    // Re-read center frequency after a short delay (SDRconnect may recentre)
+    setTimeout(() => this.getProperty('device_center_frequency'), 200);
   }
 
   setCenterFrequency(_freqHz: number): void {
@@ -205,19 +226,22 @@ export class SDRConnectClient {
   private handleTextMessage(data: string): void {
     try {
       const msg = JSON.parse(data);
+      const { event_type, property, value } = msg;
 
-      // Log first 20 text messages for diagnostics
-      if (this._textMsgCount < 20) {
-        console.log('[SDR WS]', msg);
+      // Log first 50 text messages with full detail, and always log get_property_response
+      if (this._textMsgCount < 50 || event_type === 'get_property_response') {
+        console.log('[SDR WS]', JSON.stringify(msg));
         this._textMsgCount++;
       }
-
-      const { event_type, property, value } = msg;
 
       if (event_type === 'property_changed' || event_type === 'get_property_response') {
         this.propertyCallbacks.forEach(cb => cb(property, value));
 
-        if (property === 'signal_power') {
+        if (property === 'device_center_frequency') {
+          this._deviceCenterHz = parseFloat(value);
+        } else if (property === 'device_sample_rate') {
+          this._deviceSampleRate = parseFloat(value);
+        } else if (property === 'signal_power') {
           const power = parseFloat(value);
           this.signalCallbacks.forEach(cb => cb(power, NaN));
         } else if (property === 'signal_snr') {
@@ -230,12 +254,18 @@ export class SDRConnectClient {
     }
   }
 
+  private _binaryLogCount = 0;
+
   private handleBinaryMessage(data: ArrayBuffer): void {
     const int16View = new Int16Array(data);
 
     if (int16View[0] === SPECTRUM_HEADER) {
       // Spectrum data: skip first 2 bytes (Int16 header), rest is Uint8 bins
       const bins = new Uint8Array(data, 2);
+      if (this._binaryLogCount < 3) {
+        console.log('[SDR Spectrum]', `totalBytes=${data.byteLength}, binsLength=${bins.length}, header=[${int16View[0]}, ${int16View[1]}]`);
+        this._binaryLogCount++;
+      }
       this.spectrumCallbacks.forEach(cb => cb(bins));
       return;
     }

@@ -51,6 +51,16 @@ Last updated: 2026-02-27
 - Toast confirmation on save
 - Star toggle on schedule stations adds/removes from active list
 
+## Interactive Waterfall (Issue #5)
+
+- Click/tap anywhere on the spectrum or waterfall to tune to that frequency
+- Drag left/right to pan the frequency across the band
+- Crosshair cursor with real-time frequency readout tooltip
+- EiBi station markers overlaid on the spectrum display (yellow dashed lines with station names)
+- Automatic nearby broadcast lookup (fetches active EiBi stations within the visible 1 MHz span)
+- Click on an EiBi marker to tune directly to that known broadcast
+- Frequency readout flips side to stay visible near canvas edges
+
 ## Signal and Propagation
 
 - Live signal power (dBm) and SNR (dB) meter
@@ -79,5 +89,4 @@ Last updated: 2026-02-27
 
 ## Planned (Not Yet Implemented)
 
-- Interactive waterfall with click/drag-to-tune and EiBi overlay (Issue #5)
 - Reception log support for ad-hoc and waterfall-tuned stations (Issue #7)
