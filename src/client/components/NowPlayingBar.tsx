@@ -53,7 +53,10 @@ export default function NowPlayingBar({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 text-sm">
             <span className="font-bold text-blue-400 font-mono shrink-0">{broadcast.freq_khz} kHz</span>
-            <span className="text-slate-300 truncate">{broadcast.station}</span>
+            {broadcast.station
+              ? <span className="text-slate-300 truncate">{broadcast.station}</span>
+              : <span className="text-slate-500 italic truncate">Manual Tune</span>
+            }
             <select
               value={broadcast.demod_mode}
               onChange={(e) => onDemodChange(e.target.value as DemodMode)}

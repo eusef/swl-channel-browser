@@ -276,7 +276,7 @@ function MainView() {
         time_end: '',
         days: '',
         country_code: '',
-        station: `${(freqKhz).toFixed(1)} kHz`,
+        station: '',
         language: '',
         language_name: '',
         target: '',
@@ -305,7 +305,7 @@ function MainView() {
       ...prev,
       freq_hz: newFreqHz,
       freq_khz: Math.round(newFreqKhz * 10) / 10,
-      station: `${newFreqKhz.toFixed(1)} kHz`,
+      station: '',
       remarks: 'Waterfall drag',
     } : null);
     lastTunedFreqRef.current = newFreqKhz;
