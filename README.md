@@ -20,7 +20,11 @@ SDRconnect already gives you a capable radio UI. This app adds the piece it's mi
 
 **See signal conditions** - Live signal power (dBm) and SNR (dB) meter updates in real time. Real-time spectrum display and scrolling waterfall spectrogram. Solar flux and geomagnetic data from NOAA with per-band condition badges (Good/Fair/Poor).
 
-**Save and log** - Favorite stations for quick access. Log receptions with auto-captured signal metrics and personal notes. Export your log as CSV.
+**Tune any frequency** - Enter any frequency manually to tune your receiver to stations not in the EiBi database. Supports kHz and MHz input with automatic demod mode and bandwidth selection.
+
+**Curated station lists** - Organize saved stations into named lists (DX targets, utility stations, favorites, etc.). Create, rename, and delete lists. Export and import lists as JSON for backup or sharing. Save any tuned station to a list with custom notes via the bookmark button in the now-playing bar.
+
+**Reception log** - Log receptions with auto-captured signal metrics and personal notes. Export your log as CSV.
 
 **Use it like a native app** - Installable as a PWA on iPhone, iPad, Android, or desktop. Dark theme optimized for listening sessions. Responsive layout with safe area support for notched iPhones.
 

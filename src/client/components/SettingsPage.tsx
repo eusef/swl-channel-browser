@@ -83,7 +83,7 @@ export default function SettingsPage({ onConfigChange, getClient, connectionStat
             onChange={(e) => update({ default_demod: e.target.value as DemodMode })}
             className="w-full bg-slate-700 text-slate-200 rounded px-3 py-2 text-sm border border-slate-600"
           >
-            {['AM', 'USB', 'LSB', 'NFM', 'WFM', 'CW', 'SAM'].map((m) => (
+            {['SAM', 'USB', 'LSB', 'NFM', 'WFM', 'CW'].map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
           </select>

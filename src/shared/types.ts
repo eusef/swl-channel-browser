@@ -78,6 +78,13 @@ export interface FiltersResponse {
   targets: { code: string; name: string }[];
 }
 
+export interface StationList {
+  id: string;
+  name: string;
+  created_at: string;
+  stations: Favorite[];
+}
+
 export interface ManualEntry {
   id: string;
   freq_khz: number;

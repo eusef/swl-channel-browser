@@ -9,6 +9,7 @@ import { WebSocketServer, WebSocket as WS } from 'ws';
 import scheduleRouter, { getFiltersRouter } from './routes/schedule.js';
 import configRouter, { loadConfig } from './routes/config.js';
 import favoritesRouter from './routes/favorites.js';
+import listsRouter from './routes/lists.js';
 import logRouter from './routes/log.js';
 import propagationRouter from './routes/propagation.js';
 import { parseEibiCsv } from './services/eibi-parser.js';
@@ -27,6 +28,7 @@ app.use('/api/schedule', scheduleRouter);
 app.use('/api/filters', getFiltersRouter());
 app.use('/api/config', configRouter);
 app.use('/api/favorites', favoritesRouter);
+app.use('/api/lists', listsRouter);
 app.use('/api/log', logRouter);
 app.use('/api/propagation', propagationRouter);
 

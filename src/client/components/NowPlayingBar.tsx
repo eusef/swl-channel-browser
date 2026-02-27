@@ -2,7 +2,7 @@ import { Broadcast, DemodMode } from '../../shared/types';
 import SignalMeter from './SignalMeter';
 import AudioControls from './AudioControls';
 
-const DEMOD_MODES: DemodMode[] = ['AM', 'SAM', 'USB', 'LSB', 'NFM', 'WFM', 'CW'];
+const DEMOD_MODES: DemodMode[] = ['SAM', 'USB', 'LSB', 'NFM', 'WFM', 'CW'];
 
 interface NowPlayingBarProps {
   broadcast: Broadcast | null;
@@ -18,6 +18,7 @@ interface NowPlayingBarProps {
   onVolumeChange: (v: number) => void;
   onToggleRecord: () => void;
   onDemodChange: (mode: DemodMode) => void;
+  onSaveToList?: () => void;
   nrspstIp?: string;
 }
 
@@ -35,6 +36,7 @@ export default function NowPlayingBar({
   onVolumeChange,
   onToggleRecord,
   onDemodChange,
+  onSaveToList,
   nrspstIp,
 }: NowPlayingBarProps) {
   if (!broadcast) {
@@ -65,6 +67,18 @@ export default function NowPlayingBar({
           <SignalMeter power={power} snr={snr} />
         </div>
         <div className="flex items-center gap-3 shrink-0">
+          {onSaveToList && (
+            <button
+              onClick={onSaveToList}
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-blue-400 active:text-blue-300 transition-colors"
+              title="Save to list"
+              aria-label="Save station to list"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            </button>
+          )}
           <AudioControls
             isPlaying={isPlaying}
             volume={volume}

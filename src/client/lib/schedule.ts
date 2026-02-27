@@ -1,4 +1,4 @@
-import { ScheduleResponse, FiltersResponse, AppConfig, ScheduleFilters, Favorite, ReceptionLogEntry, PropagationData } from '../../shared/types';
+import { ScheduleResponse, FiltersResponse, AppConfig, ScheduleFilters, Favorite, ReceptionLogEntry, PropagationData, StationList } from '../../shared/types';
 
 const API_BASE = '/api';
 
@@ -119,6 +119,79 @@ export async function exportLogCsv(): Promise<string> {
   const res = await fetch(`${API_BASE}/log/export`);
   if (!res.ok) throw new Error(`Failed to export log: ${res.status}`);
   return res.text();
+}
+
+// Station Lists API
+
+export async function fetchLists(): Promise<StationList[]> {
+  const res = await fetch(`${API_BASE}/lists`);
+  if (!res.ok) throw new Error(`Failed to fetch lists: ${res.status}`);
+  return res.json();
+}
+
+export async function createListApi(name: string): Promise<StationList> {
+  const res = await fetch(`${API_BASE}/lists`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`Failed to create list: ${res.status}`);
+  return res.json();
+}
+
+export async function renameListApi(id: string, name: string): Promise<StationList> {
+  const res = await fetch(`${API_BASE}/lists/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`Failed to rename list: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteListApi(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/lists/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Failed to delete list: ${res.status}`);
+}
+
+export async function addStationApi(listId: string, data: Omit<Favorite, 'id' | 'added_at'>): Promise<Favorite> {
+  const res = await fetch(`${API_BASE}/lists/${listId}/stations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to add station: ${res.status}`);
+  return res.json();
+}
+
+export async function removeStationApi(listId: string, stationId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/lists/${listId}/stations/${stationId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Failed to remove station: ${res.status}`);
+}
+
+export async function moveStationApi(fromListId: string, stationId: string, targetListId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/lists/${fromListId}/stations/${stationId}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetListId }),
+  });
+  if (!res.ok) throw new Error(`Failed to move station: ${res.status}`);
+}
+
+export async function exportListApi(listId: string): Promise<{ name: string; stations: Favorite[] }> {
+  const res = await fetch(`${API_BASE}/lists/${listId}/export`);
+  if (!res.ok) throw new Error(`Failed to export list: ${res.status}`);
+  return res.json();
+}
+
+export async function importListApi(data: { name: string; stations: Omit<Favorite, 'id' | 'added_at'>[] }): Promise<StationList> {
+  const res = await fetch(`${API_BASE}/lists/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to import list: ${res.status}`);
+  return res.json();
 }
 
 // Propagation API

@@ -11,7 +11,7 @@ function getDefaults(): AppConfig {
   return {
     sdrconnect_host: process.env.SDRCONNECT_HOST || '127.0.0.1',
     sdrconnect_port: parseInt(process.env.SDRCONNECT_PORT || '5454', 10),
-    default_demod: 'AM',
+    default_demod: 'SAM',
     default_bandwidth: 7500,
     time_format: 'utc',
     theme: 'dark',

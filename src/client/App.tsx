@@ -6,7 +6,7 @@ import { useSchedule } from './hooks/useSchedule';
 import { useFilters } from './hooks/useFilters';
 import { useSignal } from './hooks/useSignal';
 import { useAudio } from './hooks/useAudio';
-import { useFavorites } from './hooks/useFavorites';
+import { useLists } from './hooks/useLists';
 import { useLog } from './hooks/useLog';
 import { useSpectrum } from './hooks/useSpectrum';
 import { usePropagation } from './hooks/usePropagation';
@@ -18,7 +18,8 @@ import NowPlayingBar from './components/NowPlayingBar';
 import FilterBar from './components/FilterBar';
 import LookaheadToggle from './components/LookaheadToggle';
 import StationList from './components/StationList';
-import FavoritesPage from './components/FavoritesPage';
+import ListsPage from './components/ListsPage';
+import SaveToListModal from './components/SaveToListModal';
 import LogPage from './components/LogPage';
 import SettingsPage from './components/SettingsPage';
 import SpectrumPanel from './components/SpectrumPanel';
@@ -50,6 +51,8 @@ function MainView() {
   const [tunedBroadcast, setTunedBroadcast] = useState<Broadcast | null>(null);
   const [spectrumExpanded, setSpectrumExpanded] = useState(false);
   const tuneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retuneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTunedFreqRef = useRef<number>(0);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -64,7 +67,7 @@ function MainView() {
   const { broadcasts, loading, error } = useSchedule(filters, viewMode, lookaheadHours);
   const { power, snr } = useSignal(getClient, status);
   const audio = useAudio(getClient);
-  const favs = useFavorites();
+  const listsHook = useLists();
   const log = useLog();
   const spectrumEnabled = spectrumExpanded && tunedBroadcast !== null;
   const { binsRef, frameCountRef, peakShiftRef } = useSpectrum(getClient, status, spectrumEnabled);
@@ -74,6 +77,7 @@ function MainView() {
   const [manualFormCollapsed, setManualFormCollapsed] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
   const prevRecordingCountRef = useRef(0);
 
   // Auto-stop recording when audio stops
@@ -147,11 +151,38 @@ function MainView() {
           bw = bandwidthForMode(demodMode);
         }
 
+        // Safety: SDRconnect does not support plain 'AM' - always use 'SAM'
+        if (demodMode === 'AM') {
+          demodMode = 'SAM';
+          bw = bandwidthForMode('SAM');
+        }
+
+        // Detect large frequency jumps (>1 MHz) where AGC may need to resettle
+        const prevFreq = lastTunedFreqRef.current;
+        const freqDeltaKhz = prevFreq ? Math.abs(broadcast.freq_khz - prevFreq) : 0;
+        const isLargeJump = freqDeltaKhz > 1000;
+
         client.tune(broadcast.freq_hz);
         client.setDemodulator(demodMode);
         client.setBandwidth(bw);
 
+        lastTunedFreqRef.current = broadcast.freq_khz;
         setTunedBroadcast({ ...broadcast, demod_mode: demodMode, bandwidth: bw });
+
+        // After a large frequency jump, cycle the SDRconnect audio stream
+        // to reset internal gain levels (mirrors manual play/pause toggle)
+        if (isLargeJump && audio.isPlaying) {
+          if (retuneTimerRef.current) clearTimeout(retuneTimerRef.current);
+          retuneTimerRef.current = setTimeout(() => {
+            const c = getClient();
+            if (c) {
+              c.stopAudio();
+              setTimeout(() => {
+                c.startAudio();
+              }, 200);
+            }
+          }, 400);
+        }
 
         // Auto-play audio if configured
         if (config?.auto_play_audio && !audio.isPlaying) {
@@ -164,15 +195,40 @@ function MainView() {
 
   const handleToggleFavorite = useCallback(
     (broadcast: Broadcast) => {
-      const existingId = favs.getFavoriteId(broadcast.freq_khz, broadcast.station);
-      if (existingId) {
-        favs.remove(existingId);
+      const found = listsHook.findStation(broadcast.freq_khz, broadcast.station);
+      if (found) {
+        listsHook.removeStation(found.listId, found.stationId);
       } else {
-        favs.add(broadcast);
+        // Add to active list (or first list)
+        const targetListId = listsHook.activeListId || listsHook.lists[0]?.id;
+        if (targetListId) {
+          listsHook.addStation(targetListId, broadcast);
+        }
       }
     },
-    [favs]
+    [listsHook]
   );
+
+  const handleSaveToList = useCallback((listId: string, stationName: string, notes: string) => {
+    if (!tunedBroadcast) return;
+    const broadcast = { ...tunedBroadcast, station: stationName };
+    listsHook.addStation(listId, broadcast, notes);
+    setSaveModalOpen(false);
+    setToastMessage('Station saved!');
+    setToastVisible(true);
+  }, [tunedBroadcast, listsHook]);
+
+  const handleCreateListAndSave = useCallback(async (listName: string, stationName: string, notes: string) => {
+    if (!tunedBroadcast) return;
+    const newList = await listsHook.createList(listName);
+    if (newList) {
+      const broadcast = { ...tunedBroadcast, station: stationName };
+      await listsHook.addStation(newList.id, broadcast, notes);
+    }
+    setSaveModalOpen(false);
+    setToastMessage('Station saved!');
+    setToastVisible(true);
+  }, [tunedBroadcast, listsHook]);
 
   const handleSpectrumExpandedChange = useCallback((expanded: boolean) => {
     setSpectrumExpanded(expanded);
@@ -240,6 +296,7 @@ function MainView() {
         onVolumeChange={audio.changeVolume}
         onToggleRecord={handleToggleRecord}
         onDemodChange={handleDemodChange}
+        onSaveToList={tunedBroadcast ? () => setSaveModalOpen(true) : undefined}
         nrspstIp={config?.nrspst_ip}
       />
 
@@ -293,7 +350,7 @@ function MainView() {
                 onTune={handleTune}
                 loading={loading}
                 error={error}
-                isFavorite={favs.isFavorite}
+                isFavorite={listsHook.isInAnyList}
                 onToggleFavorite={handleToggleFavorite}
                 bandConditions={propagation?.band_conditions}
               />
@@ -303,11 +360,18 @@ function MainView() {
         <Route
           path="/favorites"
           element={
-            <FavoritesPage
-              favorites={favs.favorites}
-              loading={favs.loading}
+            <ListsPage
+              lists={listsHook.lists}
+              activeListId={listsHook.activeListId}
+              loading={listsHook.loading}
+              onSelectList={listsHook.setActiveListId}
+              onCreateList={listsHook.createList}
+              onRenameList={listsHook.renameList}
+              onDeleteList={listsHook.deleteList}
               onTune={handleTune}
-              onRemove={favs.remove}
+              onRemoveStation={listsHook.removeStation}
+              onExportList={listsHook.exportList}
+              onImportList={listsHook.importList}
             />
           }
         />
@@ -334,6 +398,17 @@ function MainView() {
       </Routes>
       </div>
 
+      {tunedBroadcast && saveModalOpen && (
+        <SaveToListModal
+          open={saveModalOpen}
+          broadcast={tunedBroadcast}
+          lists={listsHook.lists}
+          onSave={handleSaveToList}
+          onCreateListAndSave={handleCreateListAndSave}
+          onClose={() => setSaveModalOpen(false)}
+        />
+      )}
+
       <Toast message={toastMessage} visible={toastVisible} onDismiss={() => setToastVisible(false)} />
 
       {/* Bottom navigation */}
@@ -342,14 +417,14 @@ function MainView() {
         {[
           { label: 'Now', onClick: () => { navigate('/'); setViewMode('now'); } },
           { label: 'Soon', onClick: () => { navigate('/'); setViewMode('upcoming'); } },
-          { label: 'Favs', onClick: () => navigate('/favorites') },
+          { label: 'Lists', onClick: () => navigate('/favorites') },
           { label: 'Log', onClick: () => navigate('/log') },
           { label: 'Settings', onClick: () => navigate('/settings') },
         ].map((item) => {
           const isActive =
             (item.label === 'Now' && location.pathname === '/' && viewMode === 'now') ||
             (item.label === 'Soon' && location.pathname === '/' && viewMode === 'upcoming') ||
-            (item.label === 'Favs' && location.pathname === '/favorites') ||
+            (item.label === 'Lists' && location.pathname === '/favorites') ||
             (item.label === 'Log' && location.pathname === '/log') ||
             (item.label === 'Settings' && location.pathname === '/settings');
 

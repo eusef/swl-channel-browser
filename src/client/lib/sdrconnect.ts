@@ -144,21 +144,22 @@ export class SDRConnectClient {
   }
 
   tune(freqHz: number): void {
+    // SDRconnect recenters the display on every VFO change that falls outside
+    // the current visible span, placing the VFO at ~10% from the left edge.
+    // This position is well within the usable bandwidth (100kHz from edge in
+    // a 1 MHz span) so reception quality is not affected. The WebSocket API
+    // does not support setting device_center_frequency, so we cannot control
+    // where the VFO appears on the display.
     this.send({
       event_type: 'set_property',
       property: 'device_vfo_frequency',
       value: String(freqHz),
     });
-    // Also center the spectrum display on the tuned frequency
-    this.setCenterFrequency(freqHz);
   }
 
-  setCenterFrequency(freqHz: number): void {
-    this.send({
-      event_type: 'set_property',
-      property: 'device_center_frequency',
-      value: String(freqHz),
-    });
+  setCenterFrequency(_freqHz: number): void {
+    // NOTE: SDRconnect ignores device_center_frequency via WebSocket API.
+    // This method is kept for API compatibility but is a no-op.
   }
 
   setDemodulator(mode: DemodMode): void {
