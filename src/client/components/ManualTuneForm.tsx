@@ -94,8 +94,84 @@ export default function ManualTuneForm({ onSubmit, collapsed, onCollapsedChange 
 
       {/* Collapsible form */}
       {!collapsed && (
-        <form onSubmit={handleSubmit} className="px-4 pb-3 pt-1">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+        <form onSubmit={handleSubmit} className="px-3 sm:px-4 pb-3 pt-1">
+          {/* Mobile layout: compact rows */}
+          <div className="sm:hidden space-y-2">
+            {/* Row 1: Frequency + Tune button */}
+            <div className="flex gap-2 items-end">
+              <div className="relative flex-1 min-w-0">
+                <label className="block text-xs text-slate-400 mb-1">Frequency (kHz)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={freqInput}
+                  onChange={e => handleFreqChange(e.target.value)}
+                  placeholder="e.g. 7200"
+                  className={`w-full bg-slate-700 border rounded px-3 py-2 text-base text-slate-100 placeholder-slate-500 min-h-[44px]
+                    ${freqError ? 'border-red-500' : freqWarning ? 'border-yellow-500' : 'border-slate-600'}
+                    focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                  autoComplete="off"
+                />
+                {freqBand && (
+                  <span className="absolute right-2 top-[28px] text-xs text-blue-400 bg-slate-700 px-1">
+                    {freqBand}
+                  </span>
+                )}
+              </div>
+              <button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium px-6 py-2 rounded text-sm min-h-[44px] min-w-[44px] transition-colors shrink-0"
+              >
+                Tune
+              </button>
+            </div>
+            {freqError && <p className="text-xs text-red-400 -mt-1">{freqError}</p>}
+            {freqWarning && !freqError && <p className="text-xs text-yellow-400 -mt-1">{freqWarning}</p>}
+
+            {/* Row 2: Mode + BW side by side */}
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0">
+                <label className="block text-xs text-slate-400 mb-1">Mode</label>
+                <select
+                  value={demodMode}
+                  onChange={e => setDemodMode(e.target.value as DemodMode)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 min-h-[44px]
+                    focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {DEMOD_MODES.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1 min-w-0">
+                <label className="block text-xs text-slate-400 mb-1">BW (Hz)</label>
+                <input
+                  type="text"
+                  value={bandwidth}
+                  readOnly
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded px-3 py-2 text-sm text-slate-400 min-h-[44px] cursor-default"
+                />
+              </div>
+            </div>
+
+            {/* Row 3: Station name */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Station (optional)</label>
+              <input
+                type="text"
+                value={stationName}
+                onChange={e => setStationName(e.target.value)}
+                placeholder="Station name"
+                maxLength={80}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500 min-h-[44px]
+                  focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          {/* Desktop/tablet layout: grid */}
+          <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
             {/* Frequency input */}
             <div className="relative">
               <label className="block text-xs text-slate-400 mb-1">Frequency (kHz)</label>
