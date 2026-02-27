@@ -57,6 +57,9 @@ export default function SpectrumDisplay({
   const isDraggingRef = useRef(false);
   const hoverXRef = useRef<number | null>(null);
 
+  // Clickable EiBi label hit regions: { x, y, w, h, freqHz }
+  const labelRectsRef = useRef<{ x: number; y: number; w: number; h: number; freqHz: number }[]>([]);
+
   const getCanvasHeight = useCallback(() => {
     return window.innerWidth >= 640 ? CANVAS_HEIGHT_DESKTOP : CANVAS_HEIGHT_MOBILE;
   }, []);
@@ -151,11 +154,16 @@ export default function SpectrumDisplay({
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // EiBi markers
+    // EiBi markers with collision avoidance
+    const newLabelRects: typeof labelRectsRef.current = [];
     if (centerFreqHz && nearbyBroadcasts.length > 0) {
       ctx.save();
       ctx.font = '9px Arial, sans-serif';
       ctx.textAlign = 'center';
+
+      // Track occupied label regions to avoid overlap
+      const occupied: { left: number; right: number }[] = [];
+      const LABEL_PAD = 4; // min gap between labels in px
 
       for (const bc of nearbyBroadcasts) {
         const basePx = freqHzToPixel(bc.freq_hz, w, centerFreqHz, spanHz, shift, binCount);
@@ -163,6 +171,7 @@ export default function SpectrumDisplay({
         const px = basePx + dragPx;
         if (px < -20 || px > w + 20) continue;
 
+        // Always draw the dashed frequency line
         ctx.strokeStyle = MARKER_COLOR;
         ctx.lineWidth = 1;
         ctx.setLineDash([2, 3]);
@@ -172,18 +181,39 @@ export default function SpectrumDisplay({
         ctx.stroke();
         ctx.setLineDash([]);
 
+        // Collision check for label placement
         const label = bc.station.length > 12 ? bc.station.substring(0, 11) + '\u2026' : bc.station;
         const textWidth = ctx.measureText(label).width;
-        const labelX = Math.max(textWidth / 2 + 2, Math.min(px, w - textWidth / 2 - 2));
+        const pillW = textWidth + 6;
+        const labelCenterX = Math.max(pillW / 2 + 1, Math.min(px, w - pillW / 2 - 1));
+        const pillLeft = labelCenterX - pillW / 2;
+        const pillRight = pillLeft + pillW;
 
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
-        ctx.fillRect(labelX - textWidth / 2 - 2, 1, textWidth + 4, 12);
+        const overlaps = occupied.some(
+          r => pillLeft - LABEL_PAD < r.right && pillRight + LABEL_PAD > r.left
+        );
+        if (overlaps) continue;
+
+        // Place the label
+        occupied.push({ left: pillLeft, right: pillRight });
+
+        const pillY = 1;
+        const pillH = 14;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.fillRect(pillLeft, pillY, pillW, pillH);
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pillLeft, pillY, pillW, pillH);
 
         ctx.fillStyle = MARKER_LABEL_COLOR;
-        ctx.fillText(label, labelX, 10);
+        ctx.fillText(label, labelCenterX, 11);
+
+        // Store hit region for click handling
+        newLabelRects.push({ x: pillLeft, y: pillY, w: pillW, h: pillH, freqHz: bc.freq_hz });
       }
       ctx.restore();
     }
+    labelRectsRef.current = newLabelRects;
 
     // VFO marker (drawn LAST so it's always visible on top of everything)
     if (centerFreqHz && vfoFreqHz) {
@@ -267,8 +297,18 @@ export default function SpectrumDisplay({
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const rect = (e.target as HTMLElement).getBoundingClientRect();
     const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     hoverXRef.current = x;
     drawOverlay();
+
+    // Change cursor when hovering over an EiBi label
+    const overlay = overlayRef.current;
+    if (overlay && !pointerDownRef.current) {
+      const overLabel = labelRectsRef.current.some(
+        r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h
+      );
+      overlay.style.cursor = overLabel ? 'pointer' : 'crosshair';
+    }
 
     if (!pointerDownRef.current) return;
 
@@ -286,13 +326,23 @@ export default function SpectrumDisplay({
     if (!isDraggingRef.current && onTuneToFreq && centerFreqHz) {
       const rect = (e.target as HTMLElement).getBoundingClientRect();
       const x = e.clientX - rect.left;
-      const canvas = overlayRef.current;
-      if (canvas) {
-        const w = canvas.width / dprRef.current;
-        const shift = peakShiftRef.current ?? 0;
-        const binCount = binsRef.current?.length ?? 256;
-        const freqHz = pixelToFreqHz(x, w, centerFreqHz, spanHz, shift, binCount);
-        onTuneToFreq(freqHz);
+      const y = e.clientY - rect.top;
+
+      // Check if click landed on an EiBi label pill
+      const hitLabel = labelRectsRef.current.find(
+        r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h
+      );
+      if (hitLabel) {
+        onTuneToFreq(hitLabel.freqHz);
+      } else {
+        const canvas = overlayRef.current;
+        if (canvas) {
+          const w = canvas.width / dprRef.current;
+          const shift = peakShiftRef.current ?? 0;
+          const binCount = binsRef.current?.length ?? 256;
+          const freqHz = pixelToFreqHz(x, w, centerFreqHz, spanHz, shift, binCount);
+          onTuneToFreq(freqHz);
+        }
       }
     } else if (isDraggingRef.current && onDragEnd && centerFreqHz) {
       const canvas = overlayRef.current;

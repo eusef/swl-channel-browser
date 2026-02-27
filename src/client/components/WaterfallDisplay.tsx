@@ -71,6 +71,7 @@ export default function WaterfallDisplay({
   const rafRef = useRef<number>(0);
   const lastFrameRef = useRef(-1);
   const lastDrawnOffsetRef = useRef(0);
+  const dprRef = useRef(window.devicePixelRatio || 1);
 
   const pointerDownRef = useRef<{ x: number; startX: number } | null>(null);
   const isDraggingRef = useRef(false);
@@ -86,12 +87,14 @@ export default function WaterfallDisplay({
     const ctx = overlay.getContext('2d');
     if (!ctx) return;
 
-    const w = overlay.width;
-    const h = overlay.height;
+    const dpr = dprRef.current;
+    const w = overlay.width / dpr;
+    const h = overlay.height / dpr;
     const dragPx = sharedDragOffsetRef.current ?? 0;
     const shift = peakShiftRef.current ?? 0;
     const binCount = binsRef.current?.length ?? 256;
 
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
     // VFO marker (tracks with drag)
@@ -150,23 +153,27 @@ export default function WaterfallDisplay({
     const container = containerRef.current;
     if (!canvas || !container) return;
 
+    const dpr = window.devicePixelRatio || 1;
+    dprRef.current = dpr;
+
     const width = container.clientWidth;
     const height = getCanvasHeight();
 
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = BG_COLOR;
       ctx.fillRect(0, 0, width, height);
     }
 
     if (overlay) {
-      overlay.width = width;
-      overlay.height = height;
+      overlay.width = width * dpr;
+      overlay.height = height * dpr;
       overlay.style.width = `${width}px`;
       overlay.style.height = `${height}px`;
       drawOverlayWithCursor();
@@ -182,27 +189,35 @@ export default function WaterfallDisplay({
     const bins = binsRef.current;
     if (!bins || bins.length === 0) return;
 
-    const w = canvas.width;
-    const h = canvas.height;
+    const dpr = dprRef.current;
+    // Work at physical pixel level for waterfall bitmap operations
+    const pw = canvas.width;   // physical width (logical * dpr)
+    const ph = canvas.height;  // physical height (logical * dpr)
     const binCount = bins.length;
 
-    // Scroll existing waterfall down by 1 pixel
-    ctx.drawImage(canvas, 0, 0, w, h, 0, 1, w, h);
+    // Reset transform for raw pixel operations (drawImage/putImageData)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    // Draw new top line (no drag offset - raw data position)
-    const imageData = ctx.createImageData(w, 1);
+    // Scroll existing waterfall down by dpr pixels (1 logical row)
+    const scrollPx = Math.round(dpr);
+    ctx.drawImage(canvas, 0, 0, pw, ph, 0, scrollPx, pw, ph);
+
+    // Draw new top rows (dpr physical rows = 1 logical row)
+    const imageData = ctx.createImageData(pw, scrollPx);
     const pixels = imageData.data;
 
-    for (let x = 0; x < w; x++) {
-      const displayBin = Math.floor((x / w) * binCount);
-      const val = bins[Math.min(displayBin, binCount - 1)];
-      const lutIdx = val * 3;
+    for (let row = 0; row < scrollPx; row++) {
+      for (let x = 0; x < pw; x++) {
+        const displayBin = Math.floor((x / pw) * binCount);
+        const val = bins[Math.min(displayBin, binCount - 1)];
+        const lutIdx = val * 3;
 
-      const pixelIdx = x * 4;
-      pixels[pixelIdx] = COLOR_LUT[lutIdx];
-      pixels[pixelIdx + 1] = COLOR_LUT[lutIdx + 1];
-      pixels[pixelIdx + 2] = COLOR_LUT[lutIdx + 2];
-      pixels[pixelIdx + 3] = 255;
+        const pixelIdx = (row * pw + x) * 4;
+        pixels[pixelIdx] = COLOR_LUT[lutIdx];
+        pixels[pixelIdx + 1] = COLOR_LUT[lutIdx + 1];
+        pixels[pixelIdx + 2] = COLOR_LUT[lutIdx + 2];
+        pixels[pixelIdx + 3] = 255;
+      }
     }
 
     ctx.putImageData(imageData, 0, 0);
@@ -243,7 +258,7 @@ export default function WaterfallDisplay({
       const x = e.clientX - rect.left;
       const overlay = overlayRef.current;
       if (overlay) {
-        const w = overlay.width;
+        const w = overlay.width / dprRef.current;
         const shift = peakShiftRef.current ?? 0;
         const binCount = binsRef.current?.length ?? 256;
         const freqHz = pixelToFreqHz(x, w, centerFreqHz, spanHz, shift, binCount);
@@ -252,7 +267,7 @@ export default function WaterfallDisplay({
     } else if (isDraggingRef.current && onDragEnd && centerFreqHz) {
       const overlay = overlayRef.current;
       if (overlay) {
-        const w = overlay.width;
+        const w = overlay.width / dprRef.current;
         const totalDragPx = sharedDragOffsetRef.current ?? 0;
         const deltaHz = -(totalDragPx / w) * spanHz;
         onDragEnd(deltaHz);
@@ -271,7 +286,7 @@ export default function WaterfallDisplay({
     if (isDraggingRef.current && onDragEnd && centerFreqHz) {
       const overlay = overlayRef.current;
       if (overlay) {
-        const w = overlay.width;
+        const w = overlay.width / dprRef.current;
         const totalDragPx = sharedDragOffsetRef.current ?? 0;
         const deltaHz = -(totalDragPx / w) * spanHz;
         onDragEnd(deltaHz);
