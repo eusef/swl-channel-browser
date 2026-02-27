@@ -18,7 +18,7 @@ interface WaterfallDisplayProps {
 const CANVAS_HEIGHT_MOBILE = 100;
 const CANVAS_HEIGHT_DESKTOP = 120;
 const BG_COLOR = '#0f172a';
-const VFO_MARKER_COLOR = 'rgba(96, 165, 250, 0.5)';
+const VFO_MARKER_COLOR = 'rgba(96, 165, 250, 0.85)';
 const CROSSHAIR_COLOR = 'rgba(248, 250, 252, 0.5)';
 const DRAG_THRESHOLD = 6;
 
@@ -100,8 +100,8 @@ export default function WaterfallDisplay({
       if (vfoPx !== null) {
         const markerX = Math.floor(vfoPx + dragPx) + 0.5;
         ctx.strokeStyle = VFO_MARKER_COLOR;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
         ctx.beginPath();
         ctx.moveTo(markerX, 0);
         ctx.lineTo(markerX, h);

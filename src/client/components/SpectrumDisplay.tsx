@@ -23,7 +23,7 @@ const GRID_COLOR = 'rgba(148, 163, 184, 0.15)';
 const LINE_COLOR = '#22d3ee';
 const FILL_TOP = 'rgba(34, 211, 238, 0.3)';
 const FILL_BOTTOM = 'rgba(15, 23, 42, 0.8)';
-const VFO_MARKER_COLOR = 'rgba(96, 165, 250, 0.7)';
+const VFO_MARKER_COLOR = 'rgba(96, 165, 250, 0.9)';
 const BG_COLOR = '#0f172a';
 const MARKER_COLOR = 'rgba(250, 204, 21, 0.7)';
 const MARKER_LABEL_COLOR = 'rgba(250, 204, 21, 0.9)';
@@ -114,22 +114,6 @@ export default function SpectrumDisplay({
       ctx.stroke();
     }
 
-    // VFO marker
-    if (centerFreqHz && vfoFreqHz) {
-      const vfoPx = freqHzToPixel(vfoFreqHz, w, centerFreqHz, spanHz, shift, binsRef.current?.length ?? 256);
-      if (vfoPx !== null) {
-        const markerX = vfoPx + dragPx;
-        ctx.strokeStyle = VFO_MARKER_COLOR;
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(markerX, 0);
-        ctx.lineTo(markerX, h);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
-
     const bins = binsRef.current;
     if (!bins || bins.length === 0) return;
 
@@ -199,6 +183,22 @@ export default function SpectrumDisplay({
         ctx.fillText(label, labelX, 10);
       }
       ctx.restore();
+    }
+
+    // VFO marker (drawn LAST so it's always visible on top of everything)
+    if (centerFreqHz && vfoFreqHz) {
+      const vfoPx = freqHzToPixel(vfoFreqHz, w, centerFreqHz, spanHz, shift, binCount);
+      if (vfoPx !== null) {
+        const markerX = vfoPx + dragPx;
+        ctx.strokeStyle = VFO_MARKER_COLOR;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(markerX, 0);
+        ctx.lineTo(markerX, h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
 
     lastDrawnOffsetRef.current = dragPx;
