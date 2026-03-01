@@ -508,7 +508,7 @@ The installer sets `.so` files to root-only permissions. Fix: `sudo chmod 755 /o
 SDRconnect's WatsonWebsocket server rejects connections that include the `permessage-deflate` extension header. All WebSocket clients must connect with compression disabled: `new WebSocket(url, { perMessageDeflate: false })` in Node.js, or equivalent in other libraries.
 
 **Port 5454 not listening at all**
-Check that the headless binary is running: `ps aux | grep SDRconnect_headless`. Check the log: `cat /var/log/sdrconnect-headless.log`. Verify the cron job exists: `sudo crontab -l`. If the binary isn't running, start it manually: `sudo bash -c 'cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect /opt/sdrconnect/SDRconnect_headless &'`
+Check that the headless service is running: `sudo systemctl status sdrconnect-headless`. Check the journal: `journalctl -u sdrconnect-headless -n 50`. If the binary isn't running, restart the service: `sudo systemctl restart sdrconnect-headless`. For manual testing, use the `script -qfc` wrapper (the binary requires a pseudo-TTY): `sudo bash -c 'cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect script -qfc ./SDRconnect_headless /dev/null'`
 
 **Port 5454 only on localhost (127.0.0.1), not on LAN IP**
 The headless binary must be launched from `/opt/sdrconnect/` directory. The systemd service sets `WorkingDirectory=/opt/sdrconnect` to handle this.
