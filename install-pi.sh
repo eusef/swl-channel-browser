@@ -16,7 +16,12 @@
 # and resume automatically after each one completes.
 # ============================================================================
 
-set -euo pipefail
+set -uo pipefail
+# Note: We intentionally do NOT use set -e (errexit) here.
+# Many commands in this script (crontab -l, grep -q, systemctl is-enabled)
+# return non-zero exit codes as normal flow control. With set -e and pipefail
+# combined, these cause silent script death. Instead, we check return codes
+# explicitly where failure matters and use the fail() helper to abort.
 
 # ---------------------------------------------------------------------------
 # Config
@@ -110,9 +115,9 @@ check_arch() {
 # ---------------------------------------------------------------------------
 step_system_update() {
   info "Step 3: Updating system packages..."
-  sudo apt update
+  sudo apt update || fail "apt update failed"
   info "Upgrading installed packages (this may take a few minutes)..."
-  sudo apt upgrade -y
+  sudo apt upgrade -y || fail "apt upgrade failed"
   ok "System updated and upgraded"
 }
 
@@ -178,7 +183,7 @@ step_sdrplay_api() {
 
   read -rp "Press Enter to launch the SDRplay API installer..."
   echo ""
-  sudo "$api_installer"
+  sudo "$api_installer" || fail "SDRplay API installer exited with an error"
   ok "SDRplay API installed"
 
   # Disable sdrplay.service (headless binary runs its own)
@@ -269,7 +274,7 @@ step_sdrconnect() {
 
   read -rp "Press Enter to launch the SDRconnect installer..."
   echo ""
-  NOTSUPPORTED=true sudo -E "$sdr_installer"
+  NOTSUPPORTED=true sudo -E "$sdr_installer" || fail "SDRconnect installer exited with an error"
   ok "SDRconnect installed"
 
   # Fix .so permissions
@@ -354,8 +359,8 @@ step_nodejs() {
     return
   fi
 
-  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash -
-  sudo apt install -y nodejs
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash - || fail "NodeSource setup failed"
+  sudo apt install -y nodejs || fail "Node.js install failed"
   ok "Node.js installed: $(node --version)"
 }
 
@@ -370,7 +375,7 @@ step_git() {
     return
   fi
 
-  sudo apt install -y git
+  sudo apt install -y git || fail "Git install failed"
   ok "Git installed: $(git --version)"
 }
 
@@ -393,10 +398,10 @@ step_app_install() {
     fi
   else
     cd /opt
-    sudo git clone "$REPO_URL"
+    sudo git clone "$REPO_URL" || fail "Git clone failed"
     sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
     cd "$APP_DIR"
-    npm install
+    npm install || fail "npm install failed"
     ok "App installed"
   fi
 }
@@ -429,7 +434,7 @@ EOF
 step_build() {
   info "Step 13: Building for production..."
   cd "$APP_DIR"
-  npm run build
+  npm run build || fail "Production build failed"
   ok "Production build complete"
 }
 
