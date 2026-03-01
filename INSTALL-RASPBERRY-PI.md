@@ -175,25 +175,41 @@ SDRconnect_headless [--help] [--websocket_port=<port>]
 
 The default WebSocket port is 5454 (same as the GUI version). You only need `--websocket_port` if you want a different port.
 
-The headless binary must run as **root** for USB device access. Due to the way the internal SDRplay API service initializes, it needs a login shell environment and does not run reliably as a standard systemd service. A root cron `@reboot` job with a startup delay is the most reliable method:
+The headless binary must run as **root** for USB device access. It also requires a pseudo-TTY to stay running - without one, the .NET runtime exits immediately. Wrapping with `script -qfc` inside a systemd service provides the PTY and gives you proper service management (auto-restart, logging via `journalctl`):
 
 ```bash
-sudo crontab -e
+sudo tee /etc/systemd/system/sdrconnect-headless.service > /dev/null <<'EOF'
+[Unit]
+Description=SDRconnect Headless
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=HOME=/root
+Environment=TERM=xterm-256color
+Environment=LD_LIBRARY_PATH=/opt/sdrconnect
+WorkingDirectory=/opt/sdrconnect
+ExecStartPre=/bin/sleep 15
+ExecStart=/usr/bin/script -qfc './SDRconnect_headless' /dev/null
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
 ```
 
-If prompted for an editor, choose nano. Add this line:
-
-```
-@reboot sleep 15 && cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect /opt/sdrconnect/SDRconnect_headless >> /var/log/sdrconnect-headless.log 2>&1
-```
-
-Save and exit. The 15-second delay ensures the USB device is fully initialized before the headless binary starts.
-
-To start it now without rebooting:
+Enable and start:
 
 ```bash
-sudo bash -c 'cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect /opt/sdrconnect/SDRconnect_headless &'
+sudo systemctl daemon-reload
+sudo systemctl enable sdrconnect-headless
+sudo systemctl start sdrconnect-headless
 ```
+
+The 15-second delay ensures the USB device is fully initialized. `Restart=always` handles the case where the binary exits on first boot before USB is ready - systemd restarts it after 10 seconds and it succeeds on the next attempt.
 
 Check that port 5454 is listening:
 
@@ -220,7 +236,7 @@ Requires=sdrconnect-headless.service
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do ss -tlnp | grep -q 5454 && exit 0; sleep 1; done; exit 1'
+ExecStartPre=/bin/bash -c 'stable=0; for i in $(seq 1 90); do if ss -tlnp | grep -q 5454; then stable=$((stable+1)); [ $stable -ge 5 ] && exit 0; else stable=0; fi; sleep 1; done; exit 1'
 ExecStart=/usr/bin/node -e "const WS=require('/opt/swl-channel-browser/node_modules/ws');const ws=new WS('ws://127.0.0.1:5454/',{perMessageDeflate:false});ws.on('open',()=>{ws.send(JSON.stringify({event_type:'selected_device',value:'0'}));setTimeout(()=>ws.close(),3000);});ws.on('error',()=>process.exit(1));"
 RemainAfterExit=yes
 
@@ -552,6 +568,6 @@ Phone/tablet/laptop (browser)
 |------|---------|
 | `/opt/swl-channel-browser/.env` | App configuration (port, SDRconnect host) |
 | `/root/.sdrconnect/config.json` | SDRconnect settings (device config, runs as root) |
-| Root crontab (`sudo crontab -l`) | Headless binary @reboot startup |
+| `/etc/systemd/system/sdrconnect-headless.service` | Headless binary systemd service |
 | `/etc/systemd/system/sdrconnect-device-select.service` | Device selection oneshot service |
 | `/etc/udev/rules.d/66-sdrplay.rules` | USB device permissions for SDRplay hardware |

@@ -305,41 +305,60 @@ step_sdrconnect() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 6: SDRconnect Headless - cron @reboot
+# Step 6: SDRconnect Headless - systemd service
 # ---------------------------------------------------------------------------
-step_headless_cron() {
-  info "Step 6: Setting up headless binary to start on boot (cron @reboot)..."
+step_headless_service() {
+  info "Step 6: Setting up headless binary as a systemd service..."
 
-  local cron_line="@reboot sleep ${BOOT_DELAY} && cd ${SDR_DIR} && LD_LIBRARY_PATH=${SDR_DIR} ${HEADLESS_BIN} >> ${LOG_FILE} 2>&1"
-
-  # Check if already in root crontab
+  # Remove any leftover cron entries from previous installs
   if sudo crontab -l 2>/dev/null | grep -q "SDRconnect_headless"; then
-    warn "Root crontab already has an SDRconnect_headless entry. Replacing it..."
+    info "Removing old cron @reboot entry (replaced by systemd service)..."
     sudo crontab -l 2>/dev/null | grep -v "SDRconnect_headless" | sudo crontab -
   fi
 
-  # Add the cron entry
-  (sudo crontab -l 2>/dev/null; echo "$cron_line") | sudo crontab -
-  ok "Root cron @reboot entry added"
+  # The headless binary requires a pseudo-TTY to stay running.
+  # 'script -qfc' provides one. Restart=always handles the case where
+  # the binary exits cleanly on first boot attempt before USB is ready.
+  sudo tee /etc/systemd/system/sdrconnect-headless.service > /dev/null <<SVCEOF
+[Unit]
+Description=SDRconnect Headless
+After=network-online.target
+Wants=network-online.target
 
-  # Create the log file
-  sudo touch "$LOG_FILE"
-  sudo chmod 644 "$LOG_FILE"
+[Service]
+Type=simple
+User=root
+Environment=HOME=/root
+Environment=TERM=xterm-256color
+Environment=LD_LIBRARY_PATH=${SDR_DIR}
+WorkingDirectory=${SDR_DIR}
+ExecStartPre=/bin/sleep ${BOOT_DELAY}
+ExecStart=/usr/bin/script -qfc './SDRconnect_headless' /dev/null
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable sdrconnect-headless
+  ok "SDRconnect headless systemd service created and enabled"
 
   # Start it now
   info "Starting headless binary now..."
-  sudo bash -c "cd ${SDR_DIR} && LD_LIBRARY_PATH=${SDR_DIR} ${HEADLESS_BIN} >> ${LOG_FILE} 2>&1 &"
+  sudo systemctl start sdrconnect-headless
 
   # Wait for port 5454
-  info "Waiting for port 5454 to come up (up to 30 seconds)..."
+  info "Waiting for port 5454 to come up (up to 60 seconds)..."
   local count=0
   while ! ss -tlnp 2>/dev/null | grep -q ":5454 "; do
     sleep 1
     count=$((count + 1))
-    if [[ $count -ge 30 ]]; then
-      warn "Port 5454 did not come up within 30 seconds."
-      warn "Check the log: cat ${LOG_FILE}"
-      warn "Continuing anyway - it may start later."
+    if [[ $count -ge 60 ]]; then
+      warn "Port 5454 did not come up within 60 seconds."
+      warn "Check logs: journalctl -u sdrconnect-headless"
+      warn "Continuing anyway - it may start after a restart cycle."
       return
     fi
   done
@@ -445,15 +464,18 @@ step_build() {
 step_device_select_service() {
   info "Step 7: Creating device selection oneshot service..."
 
+  # The headless binary may start, exit, and restart on first boot (USB not ready).
+  # The port-poll waits for 5454 to be up for 5 consecutive seconds before selecting,
+  # ensuring we don't select during the first (doomed) attempt.
   sudo tee /etc/systemd/system/sdrconnect-device-select.service > /dev/null <<'SVCEOF'
 [Unit]
 Description=Select SDR device on SDRconnect headless
-After=network-online.target
-Wants=network-online.target
+After=sdrconnect-headless.service
+Requires=sdrconnect-headless.service
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 60); do ss -tlnp | grep -q 5454 && exit 0; sleep 1; done; exit 1'
+ExecStartPre=/bin/bash -c 'stable=0; for i in $(seq 1 90); do if ss -tlnp | grep -q 5454; then stable=$((stable+1)); [ $stable -ge 5 ] && exit 0; else stable=0; fi; sleep 1; done; exit 1'
 ExecStart=/usr/bin/node -e "const WS=require('/opt/swl-channel-browser/node_modules/ws');const ws=new WS('ws://127.0.0.1:5454/',{perMessageDeflate:false});ws.on('open',()=>{ws.send(JSON.stringify({event_type:'selected_device',value:'0'}));setTimeout(()=>ws.close(),3000);});ws.on('error',()=>process.exit(1));"
 RemainAfterExit=yes
 
@@ -556,13 +578,13 @@ step_verify() {
     warn "Port 5454 is not listening"
   fi
 
-  # Check cron entry
+  # Check headless service
   total=$((total + 1))
-  if sudo crontab -l 2>/dev/null | grep -q "SDRconnect_headless"; then
-    ok "Root crontab has @reboot entry"
+  if systemctl is-enabled --quiet sdrconnect-headless 2>/dev/null; then
+    ok "SDRconnect headless service is enabled"
     pass=$((pass + 1))
   else
-    warn "Root crontab missing @reboot entry"
+    warn "SDRconnect headless service is not enabled"
   fi
 
   # Check sdrplay.service disabled
@@ -695,7 +717,7 @@ main() {
   step_app_install          # Step 11
   step_env_config           # Step 12
   step_build                # Step 13
-  step_headless_cron        # Step 6 (after build so ws module exists)
+  step_headless_service     # Step 6 (after build so ws module exists)
   step_device_select_service # Step 7
   step_app_service          # Step 14
   step_avahi                # Step 15

@@ -266,7 +266,7 @@ Properties received after `selected_device`:
 
 2. **Device selection "silently failing":** Was actually working, but the 404 from compression meant the commands never reached the server. With compression disabled, `selected_device` with value `"0"` works immediately.
 
-3. **Headless binary requires root and a login shell:** The binary needs root to access USB devices via `libusb`. Running as a regular user produces `libusb_open() -3` (permission denied). It also does not run reliably as a standard systemd service (the internal API service fails to initialize correctly). A root cron `@reboot` job is the most reliable startup method.
+3. **Headless binary requires root and a pseudo-TTY:** The binary needs root to access USB devices via `libusb`. Running as a regular user produces `libusb_open() -3` (permission denied). It also requires a pseudo-TTY to stay running (without one, the .NET runtime exits immediately on Trixie). A systemd service wrapping the binary with `script -qfc` and `Restart=always` is the most reliable startup method.
 
 4. **`sdrplay.service` conflicts:** The headless binary runs its own internal SDRplay API service. Having the standalone `sdrplay.service` running simultaneously can cause device access conflicts. Disable `sdrplay.service` when using the headless binary.
 
@@ -288,7 +288,10 @@ The headless binary cannot run reliably as a systemd service. It works perfectly
 | systemd wrapped in `script -qc` (pseudo-TTY) | Abort (exit 134). |
 | systemd with `ExecStartPre=/bin/sleep 15` (USB settle delay) | Abort (exit 134). USB device is present in `lsusb`. |
 | `setsid` from interactive shell | Binary does not survive detachment from session. |
-| Root cron `@reboot` job | Works. Survives reboot reliably. |
+| Root cron `@reboot` job (without PTY) | Works on Bookworm, exits immediately on Trixie. |
+| Root cron `@reboot` with `script -qfc` (pseudo-TTY, no setsid) | Works manually, but cron kills process when @reboot job exits. |
+| Root cron `@reboot` with `setsid script -qfc` | Works manually but unreliable from cron on Trixie. |
+| systemd service with `script -qfc` + `Restart=always` | Works on both Bookworm and Trixie. Survives reboot reliably. |
 
 **systemd unit file tested (final iteration before abandoning):**
 
@@ -329,13 +332,31 @@ systemd[1]: sdrconnect-headless.service: Failed with result 'exit-code'.
 
 The restart counter reached 30+ before we stopped the service.
 
-**Workaround:** Root cron `@reboot` job is the only reliable method:
+**Workaround:** systemd service wrapping the binary with `script -qfc` for a pseudo-TTY, and `Restart=always` to handle first-boot timing:
 
-```
-@reboot sleep 15 && cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect /opt/sdrconnect/SDRconnect_headless >> /var/log/sdrconnect-headless.log 2>&1
+```ini
+[Unit]
+Description=SDRconnect Headless
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=HOME=/root
+Environment=TERM=xterm-256color
+Environment=LD_LIBRARY_PATH=/opt/sdrconnect
+WorkingDirectory=/opt/sdrconnect
+ExecStartPre=/bin/sleep 15
+ExecStart=/usr/bin/script -qfc './SDRconnect_headless' /dev/null
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-**Analysis:** The binary appears to depend on something present in an interactive login shell environment that systemd does not provide. The difference is not `HOME`, `PATH`, `TERM`, `LD_LIBRARY_PATH`, TTY allocation, or filesystem protections (all were tested). The `setsid` test confirmed the binary cannot survive detachment from a controlling session, which suggests it may require a session leader or controlling terminal that cron provides but systemd's service manager does not. This is likely related to how the .NET runtime or the internal SDRplay API service initializes under different process supervision models.
+**Analysis:** The binary requires a pseudo-TTY (controlling terminal) to stay running. On Debian Bookworm, a plain cron `@reboot` was sufficient. On Debian Trixie (13), the binary exits immediately without a PTY - it prints its banner and quits without even attempting `sdrplay_api_Open`. The `script -qfc` wrapper allocates a PTY. The binary may exit cleanly (status 0) on the first boot attempt before USB is fully ready, so `Restart=always` ensures systemd restarts it and the second attempt succeeds. Cron-based approaches (`setsid script -qfc`) worked manually but were unreliable at boot on Trixie due to process group cleanup. The systemd service approach provides proper lifecycle management.
 
 **Recommendation for SDRplay:** Adding a `--daemon` or `--no-interactive` flag that allows the headless binary to run cleanly under systemd would greatly improve deployment on headless Linux systems (Raspberry Pi, servers, embedded). The current behavior makes it incompatible with standard Linux service management.
 
@@ -349,7 +370,7 @@ The restart counter reached 30+ before we stopped the service.
 
 ## Tested On
 
-- Raspberry Pi 4 (4 GB), Raspberry Pi OS Lite (64-bit, Bookworm)
+- Raspberry Pi 4 (4 GB), Raspberry Pi OS Lite (64-bit, Bookworm and Trixie)
 - SDRplay nRSP-ST (USB ID `1df7:3040`, serial `2405169050`)
 - SDRconnect 1.0.7 build 22b2d4724
 - SDRplay API v3.15.2
