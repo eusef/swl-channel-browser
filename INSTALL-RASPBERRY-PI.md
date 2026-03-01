@@ -1,32 +1,29 @@
 # Raspberry Pi Installation Guide
 
-> **Fair warning:** This setup process is not for the faint of heart. SDRconnect's WebSocket API on the Pi requires a desktop environment, VNC, XWayland, a permissions fix on shared libraries, and a mouse-click automation workaround to auto-connect the SDR device on boot. It is brittle - a screen resolution change, an SDRconnect update, or a USB timing issue can break the auto-connect. That said, once configured, it does work reliably as an always-on listening station. Just be prepared to VNC in and troubleshoot if something shifts after an update.
+> **SDRconnect 1.0.7** added an experimental headless binary that exposes the WebSocket API (port 5454) without needing the GUI. This lets us run Raspberry Pi OS **Lite** (no desktop, no VNC, no XWayland, no xdotool). The setup is significantly simpler than previous versions.
 
-Turn a Raspberry Pi 4 into an always-on shortwave listening appliance. The Pi runs the SWL Channel Browser backend and SDRconnect, connecting to your SDRplay receiver over USB. You access the app from any device on your LAN via `http://swl-channel-browser.local:3000`.
+Turn a Raspberry Pi 4 into an always-on shortwave listening appliance. The Pi runs the SWL Channel Browser backend and SDRconnect's headless binary, connecting to your SDRplay receiver over USB. You access the app from any device on your LAN via `http://swl-channel-browser.local:3000`.
 
 ## What You Need
 
 | Item | Notes |
 |------|-------|
-| Raspberry Pi 4 (4 GB+ RAM) | 4 GB recommended. 2 GB works but is tight with the desktop environment. |
+| Raspberry Pi 4 (2 GB+ RAM) | 2 GB is fine since there's no desktop environment. 4 GB gives more headroom. |
 | microSD card (16 GB+) | 32 GB recommended |
 | Power supply | Official USB-C 5.1V/3A recommended |
 | WiFi or Ethernet | WiFi is fine for this setup |
 | SDRplay receiver | Connected via USB to the Pi (RSP1B, RSPdx-R2, RSPduo, or nRSP-ST) |
-| Another computer | For flashing the SD card, SSH, and VNC access |
-| VNC client | RealVNC Viewer or similar (needed for one-time SDRconnect setup) |
+| Another computer | For flashing the SD card and SSH access |
 
-## Why Desktop Instead of Lite?
+> **nRSP-ST users:** SDRconnect 1.0.7 requires firmware 1.0.12 or later on the nRSP-ST.
 
-SDRconnect's WebSocket API (port 5454) is only available when SDRconnect runs in GUI mode. The `--server` CLI mode only exposes port 50000 (native protocol), which does not include the WebSocket API. The Pi runs the desktop environment with VNC so SDRconnect has a display server, but you don't need a physical monitor attached.
-
-## 1. Flash Raspberry Pi OS Desktop (64-bit)
+## 1. Flash Raspberry Pi OS Lite (64-bit)
 
 Download and install [Raspberry Pi Imager](https://www.raspberrypi.com/software/) on your computer.
 
 1. Open Raspberry Pi Imager
 2. Choose **Raspberry Pi 4** as the device
-3. Choose **Raspberry Pi OS (64-bit)** - the **Desktop** version (not Lite)
+3. Choose **Raspberry Pi OS (64-bit)** - the **Lite** version (no desktop environment)
 4. Click the gear icon (or "Edit Settings") to pre-configure:
 
 | Setting | Value |
@@ -85,18 +82,49 @@ systemctl status sdrplay.service
 
 Should show `active (running)`.
 
-## 5. Install SDRconnect
-
-Install the required MP3 encoding dependency:
+**Important:** The headless binary runs its own internal API service, so `sdrplay.service` should be disabled to avoid USB device conflicts. Stop and disable it now:
 
 ```bash
-sudo apt install -y libmp3lame-dev
+sudo systemctl stop sdrplay.service
+sudo systemctl disable sdrplay.service
 ```
+
+The API driver installation is still needed for the libraries and udev rules, even though we disable the daemon.
+
+**nRSP-ST users:** The SDRplay API installer's udev rules may not include the nRSP-ST's USB product ID (`0x3040`). Check and add if missing:
+
+```bash
+grep 3040 /etc/udev/rules.d/66-sdrplay.rules
+```
+
+If nothing is returned, add the rule:
+
+```bash
+echo 'SUBSYSTEM=="usb",ENV{DEVTYPE}=="usb_device",ATTRS{idVendor}=="1df7",ATTRS{idProduct}=="3040",MODE:="0666"' | sudo tee -a /etc/udev/rules.d/66-sdrplay.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+## 5. Install SDRconnect 1.0.7
+
+Install required dependencies:
+
+```bash
+sudo apt install -y libmp3lame-dev libfontconfig1
+```
+
+`libmp3lame-dev` is for MP3 encoding. `libfontconfig1` is needed by the headless binary's SkiaSharp rendering pipeline (it will abort on startup without it).
 
 Download the ARM64 installer from the [SDRconnect page](https://www.sdrplay.com/sdrconnect/). Transfer to Pi and run:
 
 ```bash
-sudo ./SDRconnect_linux-arm64_22b2d4724.run
+scp ~/Downloads/SDRconnect_linux-arm64_22b2d4724-2.run phil@swl-channel-browser.local:~/Downloads/
+```
+
+On the Pi, run the installer. Raspberry Pi OS is Debian-based (not Ubuntu), so use the `NOTSUPPORTED` flag to skip the distribution check:
+
+```bash
+chmod +x ~/Downloads/SDRconnect_linux-arm64_22b2d4724-2.run
+NOTSUPPORTED=true sudo -E ~/Downloads/SDRconnect_linux-arm64_22b2d4724-2.run
 ```
 
 The installer asks several questions. Answer **y** to all for a standard install.
@@ -114,180 +142,158 @@ echo 'export PATH=/opt/sdrconnect:$PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
 
+Check what binaries were installed (we need the headless binary):
+
+```bash
+ls -la /opt/sdrconnect/
+```
+
 > **Note:** The exact `.run` filenames change with each release. Check the [SDRplay Downloads page](https://www.sdrplay.com/downloads/) for current filenames.
 
-## 6. Install XWayland
+## 6. Configure SDRconnect Headless Service
 
-Pi OS Bookworm uses Wayland (labwc compositor) by default. SDRconnect is an X11 application and needs XWayland to render:
+SDRconnect 1.0.7 includes an experimental headless binary that exposes the WebSocket API (port 5454) without needing a GUI. This replaces the old approach of running the full desktop app with VNC + xdotool.
 
-```bash
-sudo apt install -y xwayland
-```
-
-## 7. Enable VNC and Configure Display
+First, check if the installer already created a systemd service:
 
 ```bash
-sudo raspi-config
+systemctl status sdrconnect.service
 ```
 
-Set three things:
-
-| Menu Path | Setting |
-|-----------|---------|
-| System Options > Boot / Auto Login | Desktop Autologin |
-| Interface Options > VNC | Enable |
-| Display Options > Screen Blanking | Disable |
-
-Add a dummy HDMI output so the desktop renders without a physical monitor:
-
-```bash
-echo -e "\nhdmi_force_hotplug=1" | sudo tee -a /boot/firmware/config.txt
-```
-
-## 8. Disable SDRconnect Server Mode Service
-
-The SDRconnect installer creates a systemd service that runs in `--server` mode. This only exposes port 50000 (native protocol), not port 5454 (WebSocket API). Disable it:
+If a service exists from the installer, stop and disable it:
 
 ```bash
 sudo systemctl stop sdrconnect.service
 sudo systemctl disable sdrconnect.service
 ```
 
-The API daemon (`sdrplay.service`) must remain enabled. Only the SDRconnect server service is disabled.
+The headless binary is `/opt/sdrconnect/SDRconnect_headless`. It accepts one optional flag:
 
-## 9. Configure SDRconnect Desktop Autostart
+```
+SDRconnect_headless [--help] [--websocket_port=<port>]
+```
 
-SDRconnect must be launched from its install directory for port 5454 to bind to the LAN interface (not just localhost):
+The default WebSocket port is 5454 (same as the GUI version). You only need `--websocket_port` if you want a different port.
+
+Create the systemd service. The headless binary must run as **root** to access USB devices reliably. It also requires `Type=forking` with `bash -lc` because it needs a login shell environment to initialize the internal SDRplay API service correctly:
 
 ```bash
-mkdir -p ~/.config/autostart
+sudo tee /etc/systemd/system/sdrconnect-headless.service > /dev/null <<'EOF'
+[Unit]
+Description=SDRconnect Headless (WebSocket API on port 5454)
+After=network-online.target
+Wants=network-online.target
 
-cat > ~/.config/autostart/sdrconnect.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=SDRconnect
-Exec=bash -c "cd /opt/sdrconnect && ./SDRconnect"
-Path=/opt/sdrconnect
-Hidden=false
-X-GNOME-Autostart-enabled=true
+[Service]
+Type=forking
+User=root
+WorkingDirectory=/opt/sdrconnect
+Environment=LD_LIBRARY_PATH=/opt/sdrconnect
+Environment=HOME=/root
+Environment=TERM=xterm-256color
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/bin/bash -lc 'cd /opt/sdrconnect && /opt/sdrconnect/SDRconnect_headless &'
+Restart=always
+RestartSec=5
+ProtectHome=no
+PrivateTmp=no
+ProtectSystem=no
+
+[Install]
+WantedBy=multi-user.target
 EOF
 ```
 
-## 10. First Launch - Enable WebSocket API (One-Time Setup)
+Enable and start:
 
-Reboot:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable sdrconnect-headless
+sudo systemctl start sdrconnect-headless
+```
+
+Check that it's running and port 5454 is listening:
+
+```bash
+sudo systemctl status sdrconnect-headless
+ss -tlnp | grep 5454
+```
+
+Port 5454 should be listening on `127.0.0.1`, `127.0.1.1`, and your LAN IP.
+
+## 7. Create Device Selection Service
+
+The headless binary does not auto-connect to the SDR device on launch. A separate oneshot systemd service selects the first available device via the WebSocket API after the headless binary is ready.
+
+> **Critical: `perMessageDeflate` must be disabled.** SDRconnect's WatsonWebsocket server rejects WebSocket connections that include the `permessage-deflate` extension header (returns HTTP 404). All WebSocket clients must connect with compression disabled.
+
+This service waits for port 5454 to be listening, then sends the `selected_device` command using Node.js (installed in step 9, but listed here for reference since it runs on boot):
+
+```bash
+sudo tee /etc/systemd/system/sdrconnect-device-select.service > /dev/null <<'EOF'
+[Unit]
+Description=Select SDR device on SDRconnect headless
+After=sdrconnect-headless.service
+Requires=sdrconnect-headless.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do ss -tlnp | grep -q 5454 && exit 0; sleep 1; done; exit 1'
+ExecStart=/usr/bin/node -e "const WS=require('/opt/swl-channel-browser/node_modules/ws');const ws=new WS('ws://127.0.0.1:5454/',{perMessageDeflate:false});ws.on('open',()=>{ws.send(JSON.stringify({event_type:'selected_device',value:'0'}));setTimeout(()=>ws.close(),3000);});ws.on('error',()=>process.exit(1));"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+Enable it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable sdrconnect-device-select
+```
+
+> **Note:** This service depends on the `ws` npm module from the app (step 11). If you're following the steps in order, come back and enable this service after completing step 11.
+
+To select a specific device by serial number instead of index, replace `selected_device` with `selected_device_serial` and set the value to your device's serial (find it with `lsusb -v -d 1df7: 2>/dev/null | grep iSerial`).
+
+## 8. Verify SDRconnect Setup
+
+After completing steps 9-11, reboot to test the full stack:
 
 ```bash
 sudo reboot
 ```
 
-Connect via VNC from your computer (use RealVNC Viewer or similar, connect to `swl-channel-browser.local`).
-
-In the SDRconnect GUI:
-
-1. Open Settings/Preferences
-2. Find the **WebSocket** option and **enable it**
-3. Click the green **Start/Stop** triangle to connect to the SDR device
-4. Verify the waterfall/spectrum display is active
-5. **Gracefully close** SDRconnect (File > Exit or close the window) so settings are saved
-
-This step only needs to be done once. The WebSocket setting persists in `~/.sdrconnect/config.json`.
-
-## 11. Install xdotool and Create Startup Script
-
-SDRconnect does not auto-connect to the SDR device on launch, and the center frequency defaults to whatever was last used. We use a startup script that clicks the Start/Stop button and then sets the center frequency to 10 MHz for good shortwave broadcast band coverage.
+Wait ~30 seconds, then verify from the Pi via SSH:
 
 ```bash
-sudo apt install -y xdotool
-```
-
-Create the startup script:
-
-```bash
-cat > ~/sdrconnect-startup.sh << 'SCRIPT'
-#!/bin/bash
-# Wait for SDRconnect to launch
-sleep 20
-
-# Click the Start/Stop button to connect the device
-DISPLAY=:0 xdotool mousemove 22 113
-sleep 1
-DISPLAY=:0 xdotool click 1
-
-# Wait for device to connect
-sleep 5
-
-# Set center frequency to 10 MHz for shortwave coverage
-python3 -c "
-import asyncio, websockets, json
-async def setup():
-    async with websockets.connect('ws://127.0.0.1:5454/') as ws:
-        await ws.send(json.dumps({'event_type':'set_property','property':'device_center_frequency','value':'10000000'}))
-        await asyncio.sleep(1)
-asyncio.run(setup())
-"
-SCRIPT
-chmod +x ~/sdrconnect-startup.sh
-```
-
-Create the autostart entry that calls the script:
-
-```bash
-cat > ~/.config/autostart/sdrconnect-autoconnect.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=SDRconnect Auto-Connect
-Exec=/home/phil/sdrconnect-startup.sh
-Hidden=false
-X-GNOME-Autostart-enabled=true
-EOF
-```
-
-**Note:** The xdotool coordinates (22, 113) correspond to the Start/Stop button at 1920x1080 resolution. If you change screen resolution, you may need to recalibrate. Hover over the button in VNC and run `DISPLAY=:0 xdotool getmouselocation` to find updated coordinates. The center frequency (10 MHz / 10000000 Hz) with the default 2 MHz sample rate covers roughly 9-11 MHz, which includes the popular 31m and 25m shortwave bands. Adjust as needed for your preferred listening range.
-
-## 12. Verify SDRconnect Setup
-
-Reboot:
-
-```bash
-sudo reboot
-```
-
-Wait ~45 seconds, then verify from your computer. First install the Python websockets library if you don't have it:
-
-```bash
-pip3 install websockets
-```
-
-Then test (replace the IP with your Pi's address):
-
-```bash
-python3 -c "
-import asyncio, websockets, json
-async def test():
-    async with websockets.connect('ws://swl-channel-browser.local:5454/') as ws:
-        await ws.send(json.dumps({'event_type':'get_property','property':'device_vfo_frequency'}))
-        r = await asyncio.wait_for(ws.recv(), timeout=5)
-        print(r)
-asyncio.run(test())
+cd /opt/swl-channel-browser && node -e "
+const WS = require('ws');
+const ws = new WS('ws://127.0.0.1:5454/', { perMessageDeflate: false });
+ws.on('open', () => {
+  ws.send(JSON.stringify({event_type:'get_property',property:'started'}));
+});
+ws.on('message', (d) => { console.log(d.toString()); process.exit(); });
+ws.on('error', (e) => { console.log('ERROR:', e.message); process.exit(1); });
+setTimeout(() => process.exit(1), 5000);
 "
 ```
 
-If `swl-channel-browser.local` doesn't resolve for WebSocket connections, use the Pi's IP address directly (e.g. `ws://192.168.1.202:5454/`).
-
-Expected output (non-zero frequency):
+Expected output:
 
 ```json
 {
   "event_type": "get_property_response",
-  "property": "device_vfo_frequency",
-  "value": "9500000"
+  "property": "started",
+  "value": "true"
 }
 ```
 
-If the value is `"0"`, the xdotool auto-connect may not have fired yet. Wait another 30 seconds and retry, or VNC in to check if the device is connected.
+If `started` is `"false"`, restart the device selection service: `sudo systemctl restart sdrconnect-device-select`. Check its logs: `journalctl -u sdrconnect-device-select -n 20`
 
-## 13. Install Node.js
+## 9. Install Node.js
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -301,13 +307,13 @@ node --version   # should show v22.x
 npm --version
 ```
 
-## 14. Install Git (if not already present)
+## 10. Install Git (if not already present)
 
 ```bash
 sudo apt install -y git
 ```
 
-## 15. Install the App
+## 11. Install the App
 
 ```bash
 cd /opt
@@ -317,7 +323,7 @@ cd /opt/swl-channel-browser
 npm install
 ```
 
-## 16. Configure
+## 12. Configure
 
 Create the `.env` file:
 
@@ -329,11 +335,11 @@ SDRCONNECT_PORT=5454
 EOF
 ```
 
-If SDRconnect is running on this Pi (steps 4-12), the default `127.0.0.1` is correct.
+If SDRconnect is running on this Pi (steps 4-8), the default `127.0.0.1` is correct.
 
 **If SDRconnect runs on a different machine**, change `SDRCONNECT_HOST` to that machine's IP address.
 
-## 17. Build for Production
+## 13. Build for Production
 
 Development mode (`npm run dev`) works but uses more CPU and memory. For a headless appliance, build once and run the compiled version:
 
@@ -350,7 +356,7 @@ npm start
 
 Open `http://swl-channel-browser.local:3000` from another device on your network. If the page loads and you can browse stations, press `Ctrl+C` to stop.
 
-## 18. Auto-Start the App on Boot (systemd)
+## 14. Auto-Start the App on Boot (systemd)
 
 Create a systemd service so the app starts automatically when the Pi powers on:
 
@@ -395,7 +401,7 @@ View logs:
 journalctl -u swl-channel-browser -f
 ```
 
-## 19. Set Up Avahi (mDNS)
+## 15. Set Up Avahi (mDNS)
 
 Avahi lets other devices find the Pi at `swl-channel-browser.local` without knowing its IP. It's usually pre-installed on Raspberry Pi OS, but verify:
 
@@ -412,7 +418,7 @@ hostname
 # should print: swl-channel-browser
 ```
 
-## 20. Safe Power Removal (Read-Only Filesystem) - Optional
+## 16. Safe Power Removal (Read-Only Filesystem) - Optional
 
 SD cards can corrupt if the Pi loses power during a write. Enabling the overlay filesystem makes the root partition read-only with a temporary RAM overlay. Writes go to RAM and are discarded on reboot, so the SD card is always in a clean state and safe to unplug at any time.
 
@@ -429,7 +435,7 @@ SD cards can corrupt if the Pi loses power during a write. Enabling the overlay 
 
 ### Enable the Overlay Filesystem
 
-1. Make sure everything is set up and working first (steps 1-19)
+1. Make sure everything is set up and working first (steps 1-15)
 2. Run raspi-config:
 
 ```bash
@@ -475,48 +481,57 @@ Re-enable the overlay filesystem when done.
 |---------|------|----------|---------|
 | SWL Channel Browser | 3000 | HTTP | Web app and schedule API |
 | SDRconnect WebSocket | 5454 | WebSocket | Radio control, tune, demod, signal data, audio |
-| sdrplay.service | N/A | N/A | USB device driver daemon (must be running) |
 | SSH | 22 | TCP | Remote terminal access |
-| VNC | 5900 | TCP | Remote desktop (needed for SDRconnect GUI) |
 
 ## Verification Checklist
 
 | Check | How to verify | Expected |
 |-------|---------------|----------|
 | SSH access | `ssh phil@swl-channel-browser.local` | Login succeeds |
-| VNC access | Connect VNC to `swl-channel-browser.local` | Desktop visible, SDRconnect window open |
-| SDRplay API running | `systemctl status sdrplay.service` (on Pi) | `active (running)` |
-| Port 5454 open | `ss -tlnp \| grep 5454` (on Pi) | Three listeners including LAN IP |
-| WebSocket responds | Python test from step 12 | JSON response with non-zero frequency |
+| Headless service running | `systemctl status sdrconnect-headless` (on Pi) | `active (running)` |
+| Device selected | `systemctl status sdrconnect-device-select` (on Pi) | `active (exited)` with status=0 |
+| Port 5454 open | `ss -tlnp \| grep 5454` (on Pi) | Listening on LAN IP |
+| WebSocket responds | Node.js test from step 8 | `started: true` |
 | Signal data streaming | Connect WebSocket and listen | `signal_power` and `signal_snr` events every ~500ms |
-| App accessible | Open `http://swl-channel-browser.local:3000` in browser | Station list loads |
-| Survives reboot | Power cycle Pi, wait 45s, test WebSocket + app | Everything works without manual intervention |
+| App accessible | Open `http://swl-channel-browser.local:3000` in browser | Station list loads, green "Connected" indicator |
+| Survives reboot | Power cycle Pi, wait 30s, test WebSocket + app | Everything works without manual intervention |
 
 ## Troubleshooting
+
+**Headless binary aborts immediately with `TypeInitializationException` / `DllNotFoundException: libSkiaSharp`**
+Two possible causes:
+1. Missing `libfontconfig1`: Install with `sudo apt install -y libfontconfig1`
+2. Missing library path: Run with `LD_LIBRARY_PATH=/opt/sdrconnect` (the systemd service handles this automatically)
 
 **SDRconnect crashes with `DllNotFoundException: swig_bindings`**
 The installer sets `.so` files to root-only permissions. Fix: `sudo chmod 755 /opt/sdrconnect/*.so`
 
+**WebSocket clients get HTTP 404 even though port 5454 is listening**
+SDRconnect's WatsonWebsocket server rejects connections that include the `permessage-deflate` extension header. All WebSocket clients must connect with compression disabled: `new WebSocket(url, { perMessageDeflate: false })` in Node.js, or equivalent in other libraries.
+
 **Port 5454 not listening at all**
-The WebSocket API is off by default. VNC into the Pi, open SDRconnect settings, enable WebSocket, then gracefully exit to save. This only needs to be done once.
+Check that the headless service is running: `systemctl status sdrconnect-headless`. Check logs: `journalctl -u sdrconnect-headless -n 50`.
 
 **Port 5454 only on localhost (127.0.0.1), not on LAN IP**
-SDRconnect must be launched from `/opt/sdrconnect/` directory. Check the autostart entry uses `Exec=bash -c "cd /opt/sdrconnect && ./SDRconnect"`
+The headless binary must be launched from `/opt/sdrconnect/` directory. The systemd service sets `WorkingDirectory=/opt/sdrconnect` to handle this.
 
 **SDR device not connected after boot (frequency = 0)**
-SDRconnect does not auto-connect. The xdotool autostart (step 11) clicks the Start/Stop button after a 20-second delay. If the device still isn't connected, the delay may be too short - increase the `sleep 20` value in the autostart entry.
+The device may need to be opened via WebSocket API after the headless binary starts. Check the startup script logs and adjust the sleep delay if needed.
 
 **SDR device not detected by SDRconnect**
-The USB device may not be ready at boot. Try physically disconnecting and reconnecting the USB cable, then click Refresh in SDRconnect. If this happens consistently, increase the xdotool delay.
+The USB device may not be ready at boot. Try physically disconnecting and reconnecting the USB cable. Also check that your device's USB product ID is included in `/etc/udev/rules.d/66-sdrplay.rules` (the nRSP-ST `0x3040` may be missing). If `journalctl -u sdrconnect-headless` shows `libusb_open() -3`, this is a USB permissions issue - fix the udev rules (see step 4).
 
-**`--server` mode only exposes port 50000, not 5454**
-This is expected. The `--server` CLI flag starts the native client-server protocol only. The WebSocket API requires GUI mode. That's why we disable the systemd server service (step 8) and run SDRconnect as a desktop autostart app instead.
+**Installer fails with distribution check error**
+Raspberry Pi OS is Debian-based, not Ubuntu. Use the `NOTSUPPORTED=true` flag: `NOTSUPPORTED=true sudo -E ./SDRconnect_linux-arm64_22b2d4724-2.run`
 
-**WebSocket connects but returns HTTP 404 from Mac**
-Use the Pi's IP address directly (e.g. `ws://192.168.1.202:5454/`) instead of the `.local` hostname. Some WebSocket libraries send a `Host` header that SDRconnect's WatsonWebsocket server doesn't recognize.
+**WebSocket connects but returns HTTP 404 from Mac/remote machine**
+This is almost always caused by `perMessageDeflate` (WebSocket compression) being enabled. SDRconnect's WatsonWebsocket server rejects connections with the `permessage-deflate` extension. Disable compression in your WebSocket client. If using the Pi's IP directly doesn't help, compression is the issue.
 
 **Can't reach `swl-channel-browser.local`**
 Make sure Avahi is running: `sudo systemctl status avahi-daemon`. On Windows, install [Bonjour Print Services](https://support.apple.com/kb/DL999) for `.local` resolution. Use the Pi's IP address as a fallback.
+
+**`.local` hostname changed to `hostname-2.local` after reboot**
+If another device on your network shares the same hostname, Avahi will detect a conflict and automatically append `-2` (e.g. `swl-channel-browser-2.local`). Check with `sudo systemctl status avahi-daemon` and look for "Host name conflict, retrying with..." in the logs. Fix by either renaming the conflicting device or choosing a unique hostname for the Pi: `sudo hostnamectl set-hostname <new-name>` then `sudo reboot`.
 
 **App won't start**
 Check logs: `journalctl -u swl-channel-browser -n 50`. Verify the build exists: `ls /opt/swl-channel-browser/dist/server/index.js`. Rebuild if needed: `cd /opt/swl-channel-browser && npm run build`
@@ -545,7 +560,7 @@ Phone/tablet/laptop (browser)
   |--- http://swl-channel-browser.local:3000/ --> Node.js backend on Pi
   |    (web UI + schedule API)                     /opt/swl-channel-browser
   |
-  |--- ws://<pi-ip>:5454/ ----------------------> SDRconnect on Pi (GUI mode)
+  |--- ws://<pi-ip>:5454/ ----------------------> SDRconnect headless on Pi
        (tune, demod, audio, signal data)           SDRplay receiver via USB
 ```
 
@@ -554,7 +569,7 @@ Phone/tablet/laptop (browser)
 | File | Purpose |
 |------|---------|
 | `/opt/swl-channel-browser/.env` | App configuration (port, SDRconnect host) |
-| `~/.sdrconnect/config.json` | SDRconnect settings (WebSocket enabled, device config) |
-| `~/.config/autostart/sdrconnect.desktop` | SDRconnect desktop autostart entry |
-| `~/.config/autostart/sdrconnect-autoconnect.desktop` | xdotool auto-connect entry |
-| `/boot/firmware/config.txt` | Pi display config (`hdmi_force_hotplug=1`) |
+| `/root/.sdrconnect/config.json` | SDRconnect settings (device config, runs as root) |
+| `/etc/systemd/system/sdrconnect-headless.service` | Headless binary systemd service |
+| `/etc/systemd/system/sdrconnect-device-select.service` | Device selection oneshot service |
+| `/etc/udev/rules.d/66-sdrplay.rules` | USB device permissions for SDRplay hardware |

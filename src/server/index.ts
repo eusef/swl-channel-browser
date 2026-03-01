@@ -117,7 +117,7 @@ async function bootstrap() {
     const sdrUrl = `ws://${sdrHost}:${sdrPort}/`;
     console.log(`[WS Proxy] Client connected, proxying to ${sdrUrl}`);
 
-    const sdrWs = new WS(sdrUrl);
+    const sdrWs = new WS(sdrUrl, { perMessageDeflate: false });
 
     sdrWs.on('open', () => {
       console.log('[WS Proxy] Connected to SDRconnect');

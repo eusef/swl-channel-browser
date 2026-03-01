@@ -1,18 +1,37 @@
-# SDRconnect WebSocket API Feature Request
+# SDRconnect WebSocket API Feature Requests
 
-## Writable `device_center_frequency` Property
+## Status
+
+### Resolved in v1.0.7 (9th February 2026)
+
+| Request | Status | Notes |
+|---------|--------|-------|
+| Writable `device_center_frequency` | Fixed | Was broken in 1.0.6, fixed in 1.0.7 |
+| Writable `device_sample_rate` | Added | Now read-write in WebSocket API |
+| Headless binary for WebSocket API | Added | Experimental `SDRconnect_headless` binary, no GUI required |
+| Device selection by serial number | Added | Can open devices by serial number and display name via WebSocket API |
+
+### Open Requests
+
+| Request | Details |
+|---------|---------|
+| Headless binary documentation | The `SDRconnect_headless` binary is experimental and undocumented. Need docs on: WebSocket commands for device discovery/selection/start, expected startup behavior, and configuration options beyond `--websocket_port`. |
+| Headless binary dependencies | The headless binary still initializes the Avalonia/SkiaSharp rendering pipeline, requiring `libfontconfig1` and `LD_LIBRARY_PATH=/opt/sdrconnect`. A truly headless build without GUI dependencies would simplify deployment on Raspberry Pi OS Lite. |
+
+---
+
+## Archive: Original Feature Request (v1.0.6)
 
 **Requested for:** SDRconnect WebSocket API (tested on v1.0.6)
+**Resolved in:** v1.0.7
 
 ### Problem
 
-When setting `device_vfo_frequency` via the WebSocket API, SDRconnect recenters the spectrum display with the VFO positioned at approximately 10% from the left edge. The `device_center_frequency` property is currently read-only via WebSocket, so there is no way for an external application to center the VFO within the visible bandpass after tuning.
+When setting `device_vfo_frequency` via the WebSocket API, SDRconnect recentered the spectrum display with the VFO positioned at approximately 10% from the left edge. The `device_center_frequency` property was read-only via WebSocket, so there was no way for an external application to center the VFO within the visible bandpass after tuning.
 
-This matters for applications that make large frequency jumps (e.g., hopping between HF bands), where the VFO consistently ends up near the edge of the display rather than centered.
+### Resolution
 
-### Requested Change
-
-Make `device_center_frequency` writable via `set_property` in the WebSocket API, allowing external clients to position the spectrum display center independently of the VFO frequency.
+v1.0.7 fixed the issue with setting `device_center_frequency` via WebSocket API. The property is now writable as originally requested.
 
 ### Example Usage
 
@@ -21,8 +40,6 @@ Make `device_center_frequency` writable via `set_property` in the WebSocket API,
 { "event_type": "set_property", "property": "device_center_frequency", "value": "7200000" }
 ```
 
-This would allow the VFO to appear at the center of the spectrum display after tuning.
-
 ### Context
 
-Discovered while building [SWL Channel Browser](https://github.com/eusef/swl-channel-browser), a web-based shortwave listening app that tunes an SDRplay receiver via the SDRconnect WebSocket API. Multiple workarounds were attempted (overshoot tuning, delayed double-VFO commands, varying timing) but none reliably center the VFO because SDRconnect recenters the display on every VFO change.
+Discovered while building [SWL Channel Browser](https://github.com/eusef/swl-channel-browser), a web-based shortwave listening app that tunes an SDRplay receiver via the SDRconnect WebSocket API.
