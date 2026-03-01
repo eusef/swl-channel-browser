@@ -9,7 +9,10 @@
 #   2. SSH into the Pi
 #   3. Transfer SDRplay API .run and SDRconnect .run installers to ~/Downloads/
 #
-# Usage:
+# Quick start (from a fresh Pi):
+#   curl -fsSL https://raw.githubusercontent.com/eusef/swl-channel-browser/main/install-pi.sh -o ~/install-pi.sh && bash ~/install-pi.sh
+#
+# Or if already downloaded:
 #   bash install-pi.sh
 #
 # The script will pause at interactive installers (SDRplay API, SDRconnect)
