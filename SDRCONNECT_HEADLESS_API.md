@@ -266,11 +266,78 @@ Properties received after `selected_device`:
 
 2. **Device selection "silently failing":** Was actually working, but the 404 from compression meant the commands never reached the server. With compression disabled, `selected_device` with value `"0"` works immediately.
 
-3. **Headless binary requires root in systemd:** The binary needs root to access USB devices via `libusb`. Running as a regular user produces `libusb_open() -3` (permission denied). Also requires `Type=forking` with `bash -lc` wrapper for the internal API service to initialize correctly.
+3. **Headless binary requires root and a login shell:** The binary needs root to access USB devices via `libusb`. Running as a regular user produces `libusb_open() -3` (permission denied). It also does not run reliably as a standard systemd service (the internal API service fails to initialize correctly). A root cron `@reboot` job is the most reliable startup method.
 
 4. **`sdrplay.service` conflicts:** The headless binary runs its own internal SDRplay API service. Having the standalone `sdrplay.service` running simultaneously can cause device access conflicts. Disable `sdrplay.service` when using the headless binary.
 
 5. **nRSP-ST missing from udev rules:** The SDRplay API installer's udev rules (`66-sdrplay.rules`) do not include product ID `0x3040` (nRSP-ST). Must be added manually.
+
+## Known Issue: systemd Incompatibility (for SDRplay team)
+
+The headless binary cannot run reliably as a systemd service. It works perfectly when launched manually from an interactive root shell (`sudo`), but enters a crash loop (SIGABRT, exit code 134) when managed by systemd. The binary calls `sdrplay_api_Open`, immediately calls `sdrplay_api_Close`, then aborts.
+
+**Behavior observed:**
+
+| Launch method | Result |
+|---------------|--------|
+| `sudo ./SDRconnect_headless` from SSH | Works. Port 5454 binds, WebSocket API responds, device streams. |
+| systemd `Type=simple`, `User=root` | Abort (exit 134). Crash loop. |
+| systemd `Type=forking`, `ExecStart=/bin/bash -lc '... &'` | Works after manual `systemctl restart`, but aborts on boot. |
+| systemd with `ProtectHome=no`, `PrivateTmp=no`, `ProtectSystem=no` | Abort (exit 134). |
+| systemd with full env (`HOME=/root`, `TERM=xterm-256color`, full `PATH`) | Abort (exit 134). |
+| systemd wrapped in `script -qc` (pseudo-TTY) | Abort (exit 134). |
+| systemd with `ExecStartPre=/bin/sleep 15` (USB settle delay) | Abort (exit 134). USB device is present in `lsusb`. |
+| `setsid` from interactive shell | Binary does not survive detachment from session. |
+| Root cron `@reboot` job | Works. Survives reboot reliably. |
+
+**systemd unit file tested (final iteration before abandoning):**
+
+```ini
+[Unit]
+Description=SDRconnect Headless
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=root
+Environment=HOME=/root
+Environment=TERM=xterm-256color
+Environment=LD_LIBRARY_PATH=/opt/sdrconnect
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WorkingDirectory=/opt/sdrconnect
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash -lc 'cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect ./SDRconnect_headless &'
+Restart=on-failure
+RestartSec=5
+ProtectHome=no
+PrivateTmp=no
+ProtectSystem=no
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Journal output during crash loop:**
+
+```
+SDRconnect_headless[...]: sdrplay_api_Open
+SDRconnect_headless[...]: sdrplay_api_Close
+systemd[1]: sdrconnect-headless.service: Main process exited, code=exited, status=134/n/a
+systemd[1]: sdrconnect-headless.service: Failed with result 'exit-code'.
+```
+
+The restart counter reached 30+ before we stopped the service.
+
+**Workaround:** Root cron `@reboot` job is the only reliable method:
+
+```
+@reboot sleep 15 && cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect /opt/sdrconnect/SDRconnect_headless >> /var/log/sdrconnect-headless.log 2>&1
+```
+
+**Analysis:** The binary appears to depend on something present in an interactive login shell environment that systemd does not provide. The difference is not `HOME`, `PATH`, `TERM`, `LD_LIBRARY_PATH`, TTY allocation, or filesystem protections (all were tested). The `setsid` test confirmed the binary cannot survive detachment from a controlling session, which suggests it may require a session leader or controlling terminal that cron provides but systemd's service manager does not. This is likely related to how the .NET runtime or the internal SDRplay API service initializes under different process supervision models.
+
+**Recommendation for SDRplay:** Adding a `--daemon` or `--no-interactive` flag that allows the headless binary to run cleanly under systemd would greatly improve deployment on headless Linux systems (Raspberry Pi, servers, embedded). The current behavior makes it incompatible with standard Linux service management.
 
 ## Open Questions
 

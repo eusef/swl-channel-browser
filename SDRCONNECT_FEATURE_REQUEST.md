@@ -17,6 +17,8 @@
 |---------|---------|
 | Headless binary documentation | The `SDRconnect_headless` binary is experimental and undocumented. Need docs on: WebSocket commands for device discovery/selection/start, expected startup behavior, and configuration options beyond `--websocket_port`. |
 | Headless binary dependencies | The headless binary still initializes the Avalonia/SkiaSharp rendering pipeline, requiring `libfontconfig1` and `LD_LIBRARY_PATH=/opt/sdrconnect`. A truly headless build without GUI dependencies would simplify deployment on Raspberry Pi OS Lite. |
+| Silent/unattended install (`-y` flag) | Both the SDRplay API `.run` installer and the SDRconnect `.run` installer require interactive input (license acceptance, install path, etc.). A `-y` or `--accept-license` flag that accepts defaults would enable fully automated provisioning of headless Raspberry Pi deployments without user interaction. Currently every install requires someone at the keyboard answering prompts, which blocks scripted/unattended setups (e.g. fleet provisioning, CI/CD pipelines, disk images). |
+| systemd compatibility for headless binary | The headless binary works when launched manually (`sudo`) or via cron `@reboot`, but crashes (SIGABRT, exit 134) under every systemd service configuration tested. A `--daemon` or `--no-interactive` flag would allow it to run as a standard systemd service. See `SDRCONNECT_HEADLESS_API.md` "Known Issue: systemd Incompatibility" for full details. |
 
 ---
 

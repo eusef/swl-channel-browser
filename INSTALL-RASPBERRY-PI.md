@@ -175,47 +175,29 @@ SDRconnect_headless [--help] [--websocket_port=<port>]
 
 The default WebSocket port is 5454 (same as the GUI version). You only need `--websocket_port` if you want a different port.
 
-Create the systemd service. The headless binary must run as **root** to access USB devices reliably. It also requires `Type=forking` with `bash -lc` because it needs a login shell environment to initialize the internal SDRplay API service correctly:
+The headless binary must run as **root** for USB device access. Due to the way the internal SDRplay API service initializes, it needs a login shell environment and does not run reliably as a standard systemd service. A root cron `@reboot` job with a startup delay is the most reliable method:
 
 ```bash
-sudo tee /etc/systemd/system/sdrconnect-headless.service > /dev/null <<'EOF'
-[Unit]
-Description=SDRconnect Headless (WebSocket API on port 5454)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=forking
-User=root
-WorkingDirectory=/opt/sdrconnect
-Environment=LD_LIBRARY_PATH=/opt/sdrconnect
-Environment=HOME=/root
-Environment=TERM=xterm-256color
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/bin/bash -lc 'cd /opt/sdrconnect && /opt/sdrconnect/SDRconnect_headless &'
-Restart=always
-RestartSec=5
-ProtectHome=no
-PrivateTmp=no
-ProtectSystem=no
-
-[Install]
-WantedBy=multi-user.target
-EOF
+sudo crontab -e
 ```
 
-Enable and start:
+If prompted for an editor, choose nano. Add this line:
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable sdrconnect-headless
-sudo systemctl start sdrconnect-headless
+```
+@reboot sleep 15 && cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect /opt/sdrconnect/SDRconnect_headless >> /var/log/sdrconnect-headless.log 2>&1
 ```
 
-Check that it's running and port 5454 is listening:
+Save and exit. The 15-second delay ensures the USB device is fully initialized before the headless binary starts.
+
+To start it now without rebooting:
 
 ```bash
-sudo systemctl status sdrconnect-headless
+sudo bash -c 'cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect /opt/sdrconnect/SDRconnect_headless &'
+```
+
+Check that port 5454 is listening:
+
+```bash
 ss -tlnp | grep 5454
 ```
 
@@ -488,7 +470,7 @@ Re-enable the overlay filesystem when done.
 | Check | How to verify | Expected |
 |-------|---------------|----------|
 | SSH access | `ssh phil@swl-channel-browser.local` | Login succeeds |
-| Headless service running | `systemctl status sdrconnect-headless` (on Pi) | `active (running)` |
+| Headless binary running | `ss -tlnp \| grep 5454` (on Pi) | Listening on LAN IP |
 | Device selected | `systemctl status sdrconnect-device-select` (on Pi) | `active (exited)` with status=0 |
 | Port 5454 open | `ss -tlnp \| grep 5454` (on Pi) | Listening on LAN IP |
 | WebSocket responds | Node.js test from step 8 | `started: true` |
@@ -510,7 +492,7 @@ The installer sets `.so` files to root-only permissions. Fix: `sudo chmod 755 /o
 SDRconnect's WatsonWebsocket server rejects connections that include the `permessage-deflate` extension header. All WebSocket clients must connect with compression disabled: `new WebSocket(url, { perMessageDeflate: false })` in Node.js, or equivalent in other libraries.
 
 **Port 5454 not listening at all**
-Check that the headless service is running: `systemctl status sdrconnect-headless`. Check logs: `journalctl -u sdrconnect-headless -n 50`.
+Check that the headless binary is running: `ps aux | grep SDRconnect_headless`. Check the log: `cat /var/log/sdrconnect-headless.log`. Verify the cron job exists: `sudo crontab -l`. If the binary isn't running, start it manually: `sudo bash -c 'cd /opt/sdrconnect && LD_LIBRARY_PATH=/opt/sdrconnect /opt/sdrconnect/SDRconnect_headless &'`
 
 **Port 5454 only on localhost (127.0.0.1), not on LAN IP**
 The headless binary must be launched from `/opt/sdrconnect/` directory. The systemd service sets `WorkingDirectory=/opt/sdrconnect` to handle this.
@@ -570,6 +552,6 @@ Phone/tablet/laptop (browser)
 |------|---------|
 | `/opt/swl-channel-browser/.env` | App configuration (port, SDRconnect host) |
 | `/root/.sdrconnect/config.json` | SDRconnect settings (device config, runs as root) |
-| `/etc/systemd/system/sdrconnect-headless.service` | Headless binary systemd service |
+| Root crontab (`sudo crontab -l`) | Headless binary @reboot startup |
 | `/etc/systemd/system/sdrconnect-device-select.service` | Device selection oneshot service |
 | `/etc/udev/rules.d/66-sdrplay.rules` | USB device permissions for SDRplay hardware |
