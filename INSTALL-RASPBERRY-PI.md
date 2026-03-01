@@ -127,7 +127,7 @@ chmod +x ~/Downloads/SDRconnect_linux-arm64_22b2d4724-2.run
 NOTSUPPORTED=true sudo -E ~/Downloads/SDRconnect_linux-arm64_22b2d4724-2.run
 ```
 
-The installer asks several questions. Answer **y** to all for a standard install.
+The installer asks several questions. Answer **y** to most prompts, but answer **n** when asked to "Create a system menu entry to launch SDRconnect client". That creates a `sdrconnect.service` that runs the full GUI server, which conflicts with the headless binary by grabbing the USB device.
 
 **Critical: Fix shared library permissions.** The installer sets `.so` files to root-only. Without this fix, SDRconnect crashes with `DllNotFoundException: Unable to load shared library 'swig_bindings'`:
 

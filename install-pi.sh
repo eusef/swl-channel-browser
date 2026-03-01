@@ -264,7 +264,9 @@ step_sdrconnect() {
     "" \
     "What to do:" \
     "  - Read and accept the license agreement" \
-    "  - Answer ${GREEN}y${NC} (yes) to all prompts to use default options" \
+    "  - Answer ${GREEN}y${NC} (yes) to most prompts" \
+    "  - ${RED}IMPORTANT:${NC} When asked to create a system menu entry," \
+    "    answer ${RED}n${NC} (no). We use our own headless service instead." \
     "  - The installer will finish on its own" \
     "" \
     "Note: The Ubuntu distribution check is bypassed automatically" \
@@ -289,12 +291,28 @@ step_sdrconnect() {
     fail "Headless binary not found at ${HEADLESS_BIN}. Check the SDRconnect installation."
   fi
 
-  # Disable any installer-created sdrconnect.service
-  if systemctl list-unit-files | grep -q sdrconnect.service; then
-    info "Disabling installer-created sdrconnect.service..."
+  # Check if the installer created sdrconnect.service (the full GUI server).
+  # This happens when the user answers "y" to "Create a system menu entry".
+  # It conflicts with the headless binary by grabbing the USB device.
+  if systemctl is-enabled sdrconnect.service 2>/dev/null | grep -q "enabled"; then
+    echo ""
+    warn "The SDRconnect installer created a GUI server service (sdrconnect.service)."
+    warn "This conflicts with the headless binary and must be disabled."
+    echo ""
+    read -rp "OK to stop and disable sdrconnect.service? (y/n): " fix_svc
+    if [[ "$fix_svc" == "y" || "$fix_svc" == "Y" ]]; then
+      sudo systemctl stop sdrconnect.service 2>/dev/null || true
+      sudo systemctl disable sdrconnect.service 2>/dev/null || true
+      ok "sdrconnect.service stopped and disabled"
+    else
+      warn "Leaving sdrconnect.service enabled. The headless binary may not work!"
+      warn "If you have issues, run: sudo systemctl stop sdrconnect && sudo systemctl disable sdrconnect"
+    fi
+  else
+    # Attempt stop/disable anyway in case it exists but isn't enabled
     sudo systemctl stop sdrconnect.service 2>/dev/null || true
     sudo systemctl disable sdrconnect.service 2>/dev/null || true
-    ok "sdrconnect.service disabled"
+    ok "No conflicting sdrconnect.service found"
   fi
 
   # Add to PATH
@@ -309,6 +327,24 @@ step_sdrconnect() {
 # ---------------------------------------------------------------------------
 step_headless_service() {
   info "Step 6: Setting up headless binary as a systemd service..."
+
+  # Seed SDRconnect config with WebSocket and device discovery enabled
+  local config_dir="/root/.sdrconnect"
+  local config_file="${config_dir}/config.json"
+  if [[ ! -f "$config_file" ]] || ! sudo grep -q "WebSocketInterfaceEnabled" "$config_file" 2>/dev/null; then
+    info "Seeding SDRconnect config with WebSocket and device discovery enabled..."
+    sudo mkdir -p "$config_dir"
+    sudo tee "$config_file" > /dev/null <<'CFGEOF'
+{
+    "networkserver_sources": null,
+    "WebSocketInterfaceEnabled": true,
+    "DeviceDiscoveryEnabled": true
+}
+CFGEOF
+    ok "SDRconnect config created at ${config_file}"
+  else
+    ok "SDRconnect config already exists with WebSocket enabled"
+  fi
 
   # Remove any leftover cron entries from previous installs
   if sudo crontab -l 2>/dev/null | grep -q "SDRconnect_headless"; then
