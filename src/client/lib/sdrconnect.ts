@@ -1,7 +1,7 @@
 import { DemodMode } from '../../shared/types';
 
 type SignalCallback = (power: number, snr: number) => void;
-type PropertyCallback = (prop: string, value: string) => void;
+type PropertyCallback = (prop: string, value: string, eventType: string) => void;
 type AudioCallback = (samples: Int16Array) => void;
 type SpectrumCallback = (bins: Uint8Array) => void;
 type ConnectionCallback = (connected: boolean) => void;
@@ -211,7 +211,8 @@ export class SDRConnectClient {
     }
   }
 
-  private getProperty(property: string): void {
+  /** Request a property value from SDRconnect (response arrives via onPropertyChange) */
+  getProperty(property: string): void {
     this.send({ event_type: 'get_property', property });
   }
 
@@ -348,7 +349,7 @@ export class SDRConnectClient {
           }
         }
 
-        this.propertyCallbacks.forEach(cb => cb(property, value));
+        this.propertyCallbacks.forEach(cb => cb(property, value, event_type));
 
         if (property === 'device_center_frequency') {
           this._deviceCenterHz = parseFloat(value);

@@ -13,6 +13,7 @@ import { useNearbyBroadcasts } from './hooks/useNearbyBroadcasts';
 import { usePropagation } from './hooks/usePropagation';
 import { useRecording } from './hooks/useRecording';
 import { useManualEntries } from './hooks/useManualEntries';
+import { useSDRControls } from './hooks/useSDRControls';
 import { fetchConfig } from './lib/schedule';
 import ClockBar from './components/ClockBar';
 import NowPlayingBar from './components/NowPlayingBar';
@@ -27,6 +28,7 @@ import SpectrumPanel from './components/SpectrumPanel';
 import PropagationBar from './components/PropagationBar';
 import ManualTuneForm from './components/ManualTuneForm';
 import ManualEntryList from './components/ManualEntryList';
+import GainPanel from './components/GainPanel';
 import Toast from './components/Toast';
 
 type ViewMode = 'now' | 'upcoming';
@@ -70,6 +72,7 @@ function MainView() {
   const { broadcasts, loading, error } = useSchedule(filters, viewMode, lookaheadHours);
   const { power, snr } = useSignal(getClient, status);
   const audio = useAudio(getClient);
+  const sdrControls = useSDRControls(getClient, status);
   const listsHook = useLists();
   const log = useLog();
   // Track device center frequency from SDRconnect
@@ -384,6 +387,20 @@ function MainView() {
         onDemodChange={handleDemodChange}
         onSaveToList={tunedBroadcast ? () => setSaveModalOpen(true) : undefined}
         nrspstIp={config?.nrspst_ip}
+      />
+
+      <GainPanel
+        lnaState={sdrControls.lnaState}
+        lnaMin={sdrControls.lnaMin}
+        lnaMax={sdrControls.lnaMax}
+        agcEnabled={sdrControls.agcEnabled}
+        agcThreshold={sdrControls.agcThreshold}
+        overload={sdrControls.overload}
+        connected={status === 'connected'}
+        writable={sdrControls.writable}
+        onLNAChange={sdrControls.setLNA}
+        onAGCChange={sdrControls.setAGC}
+        onAGCThresholdChange={sdrControls.setAGCThreshold}
       />
 
       <SpectrumPanel

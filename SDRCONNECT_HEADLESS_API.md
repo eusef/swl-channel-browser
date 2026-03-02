@@ -79,19 +79,78 @@ Connect via WebSocket to `ws://<host>:5454/`. The API uses JSON text messages fo
 { "event_type": "property_changed", "property": "<property_name>", "value": "<value>" }
 ```
 
-### Confirmed Properties (tested)
+### Confirmed Properties (automated test, 2026-03-02)
+
+Tested via `npm run test:sdr` against SDRconnect 1.0.7 GUI mode on macOS.
+Full results in `sdr-property-report.json`.
+
+**Readable and writable (19):**
 
 | Property | Read | Write | Value Type | Notes |
 |----------|------|-------|------------|-------|
-| `device_vfo_frequency` | Yes | Yes | Hz string (e.g. `"7200000"`) | Returns `"0"` when no device connected |
-| `device_center_frequency` | Yes | Yes (1.0.7) | Hz string | Was broken in 1.0.6, fixed in 1.0.7 |
-| `device_sample_rate` | Yes | Yes (1.0.7) | Hz string | Changed to read-write in 1.0.7 |
-| `iq_sample_rate` | Yes | ? | Hz string | IQ sample rate |
-| `demodulator` | Yes | Yes | Mode string | Demodulation mode |
-| `filter_bandwidth` | Yes | Yes | Hz string | Demodulator filter bandwidth |
-| `antenna_select` | ? | Yes | Port string | Antenna port selection |
-| `signal_power` | Yes | No | dBm string | Signal power level |
-| `signal_snr` | Yes | No | dB string | Signal-to-noise ratio |
+| `lna_state` | Yes | Yes | Integer (0-18) | RF gain. Range varies by band, see `lna_state_min`/`lna_state_max` |
+| `agc_enable` | Yes | Yes | Boolean string | IF autogain on/off |
+| `agc_threshold` | Yes | Yes | Integer (0-100+) | AGC setpoint. Server may clamp values. |
+| `audio_volume_percent` | Yes | Yes | Integer (0-100) | Audio output volume |
+| `audio_mute` | Yes | Yes | Boolean string | Mute/unmute audio |
+| `audio_filter` | Yes | Yes* | Boolean string | *Responds but may not accept new value |
+| `audio_limiters` | Yes | Yes | Boolean string | Audio limiter on/off |
+| `squelch_enable` | Yes | Yes | Boolean string | Squelch on/off |
+| `squelch_threshold` | Yes | Yes | Integer | Squelch level (dBm, e.g. -150) |
+| `noise_reduction_enable` | Yes | Yes | Boolean string | Noise reduction on/off |
+| `noise_reduction_strength` | Yes | Yes | Integer | NR strength |
+| `spectrum_ref_level` | Yes | Yes | Integer | Spectrum display reference level |
+| `spectrum_base` | Yes | Yes | Integer | Spectrum display base level (e.g. -145) |
+| `wfm_stereo_enable` | Yes | Yes | Boolean string | WFM stereo decode on/off |
+| `rds_enable` | Yes | Yes | Boolean string | RDS decode on/off |
+| `am_lowcut_frequency` | Yes | Yes | Hz string | AM low-cut filter frequency |
+| `ssb_lowcut_frequency` | Yes | Yes | Hz string | SSB low-cut filter frequency |
+| `nfm_lowcut_frequency` | Yes | Yes | Hz string | NFM low-cut filter frequency |
+| `nfm_deemphasis_enable` | Yes | Yes | Boolean string | NFM de-emphasis on/off |
+
+**Readable only (17):**
+
+| Property | Value Type | Notes |
+|----------|------------|-------|
+| `device_vfo_frequency` | Hz string | Returns `"0"` when no device connected |
+| `device_center_frequency` | Hz string | |
+| `device_sample_rate` | Hz string | |
+| `demodulator` | Mode string | e.g. "SAM", "USB", "LSB", "AM", "NFM" |
+| `filter_bandwidth` | Hz string | |
+| `started` | Boolean string | `"true"` when device is streaming |
+| `lna_state_min` | Integer | Min LNA value for current device/band |
+| `lna_state_max` | Integer | Max LNA value for current device/band |
+| `overload` | Boolean string | RF overload indicator (toggles rapidly with signal) |
+| `wfm_stereo` | Boolean string | Current stereo decode status (read-only) |
+| `rds_ps` | String | RDS program service name |
+| `rds_pi` | String | RDS program identification |
+| `rds_pty` | String | RDS program type |
+| `demod_max_bandwidth` | Hz string | Max bandwidth for current demod mode |
+| `signal_power` | dBm string | Signal power level |
+| `signal_snr` | dB string | Signal-to-noise ratio |
+| `can_control` | Boolean string | Whether client has control |
+
+**Not accessible in GUI mode (34):**
+
+These properties do not respond to `get_property` in GUI mode. Blind writes
+(set_property followed by get_property) also produced no response. They may
+work in headless mode (untested). Property names extracted from the binary
+via `strings`.
+
+Blind write tested (no response): `antenna_select` ("Hi-Z"),
+`device_if_gain_reduction` ("30"), `device_ppm_correction` ("0"),
+`device_rf_notch_enabled` ("true"), `device_dab_notch_enabled` ("true"),
+`device_bias_t_enabled` ("false"), `device_hdr_mode_enabled` ("false")
+
+Not tested: `iq_sample_rate`, `can_set_center_frequency`, `can_set_sample_rate`,
+`supports_zero_if_mode`, `can_set_display_fft_size`, `can_set_display_fft_rate`,
+`supports_multiple_vrx`, `supports_hdr`, `supports_diversity`, `supports_full_iq`,
+`have_exclusive_control`, `device_max_sample_rate`, `device_max_center_frequency`,
+`has_multiple_antennas`, `has_bias_t`, `has_rf_notch`, `has_dab_notch`,
+`has_ref_clk_output`, `device_if_agc_attack`, `device_if_agc_decay`,
+`device_if_agc_decay_delay`, `device_if_agc_decay_threshold`,
+`device_low_if_enabled`, `device_set_point_max`, `display_fft_rate_min`,
+`display_fft_rate_max`, `display_fft_rate_default`
 
 ### DC Spike / Zero-IF Mode (from SDRplay team, March 2026)
 
@@ -384,4 +443,4 @@ WantedBy=multi-user.target
 
 ## Last Updated
 
-2026-03-01
+2026-03-02

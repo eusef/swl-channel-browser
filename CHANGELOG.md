@@ -4,6 +4,28 @@ All notable changes to the SWL Channel Browser are documented here.
 
 ## [Unreleased]
 
+### Issue #13 - SDR WebUI Controls (Phase 1: Gain/AGC)
+
+**Added**
+
+- Collapsible "Gain" panel below the now-playing bar with real-time SDR controls
+- LNA state slider with dynamic min/max from device-reported `lna_state_min`/`lna_state_max` (RF gain, 0-19 on nRSP-ST)
+- AGC enable/disable toggle via `agc_enable` property (IF autogain)
+- AGC threshold slider (0-100 dB) when AGC is enabled
+- Overload detection with pulsing "OVL" indicator and troubleshooting hint
+- Compact collapsed summary showing current LNA state and AGC status
+- `useSDRControls` hook with optimistic UI updates, debounced sends, and post-set verification
+- `GainPanel` component with +/- step buttons for precise adjustments (44px touch targets)
+- Timeout-based read-only detection for properties SDRconnect GUI mode doesn't support
+- `scripts/sdr-property-test.ts` for auditing all 70 known WebSocket properties
+- `npm run test:sdr` convenience script (requires dev server running)
+- `sdr-property-report.json` output with categorized read/write results
+- Works in both GUI mode (Mac/Windows) and headless mode (Raspberry Pi)
+
+**Removed**
+
+- IF gain reduction slider (device_if_gain_reduction not readable in GUI mode per property test)
+
 ### Issue #12 - SDRconnect 1.0.7 Upgrade
 
 **Changed**

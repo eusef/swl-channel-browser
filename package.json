@@ -13,7 +13,8 @@
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:sdr": "tsx scripts/sdr-property-test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

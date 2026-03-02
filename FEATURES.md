@@ -1,6 +1,6 @@
 # SWL Channel Browser - Features
 
-Last updated: 2026-03-01
+Last updated: 2026-03-02
 
 ## Schedule Browsing
 
@@ -62,6 +62,27 @@ Last updated: 2026-03-01
 - Automatic nearby broadcast lookup (fetches active EiBi stations within the visible 1 MHz span)
 - Click on an EiBi marker to tune directly to that known broadcast
 - Frequency readout flips side to stay visible near canvas edges
+
+## Gain Controls (Issues #11/#13)
+
+- Collapsible gain panel below the now-playing bar (works in GUI and headless mode)
+- LNA state slider with device-reported min/max range and +/- step buttons (RF gain)
+- AGC toggle (on/off) for IF autogain
+- AGC threshold slider (visible when AGC enabled, 0-100 dB)
+- Overload indicator with pulsing warning and troubleshooting hint
+- Compact summary line when collapsed (LNA state, AGC status at a glance)
+- Optimistic UI updates with debounced WebSocket sends
+- Post-set verification via get_property with timeout-based read-only detection
+- Real-time WebSocket updates (no save button needed)
+
+## SDR Property Test Script
+
+- Standalone test script (`npm run test:sdr`) for auditing all SDRconnect WebSocket properties
+- Tests 70 properties for readability and writability
+- Safe write tests (toggles booleans back, restores numeric values)
+- Produces categorized console report and JSON file (`sdr-property-report.json`)
+- Connects through the app's WebSocket proxy (requires dev server running)
+- Usable against GUI or headless SDRconnect instances
 
 ## Signal and Propagation
 
