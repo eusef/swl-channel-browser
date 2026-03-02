@@ -29,6 +29,9 @@ import PropagationBar from './components/PropagationBar';
 import ManualTuneForm from './components/ManualTuneForm';
 import ManualEntryList from './components/ManualEntryList';
 import GainPanel from './components/GainPanel';
+import AudioPanel from './components/AudioPanel';
+import FilterPanel from './components/FilterPanel';
+import SpectrumControlPanel from './components/SpectrumControlPanel';
 import Toast from './components/Toast';
 
 type ViewMode = 'now' | 'upcoming';
@@ -401,6 +404,50 @@ function MainView() {
         onLNAChange={sdrControls.setLNA}
         onAGCChange={sdrControls.setAGC}
         onAGCThresholdChange={sdrControls.setAGCThreshold}
+      />
+
+      <AudioPanel
+        audioMute={sdrControls.audioMute}
+        audioLimiters={sdrControls.audioLimiters}
+        squelchEnable={sdrControls.squelchEnable}
+        squelchThreshold={sdrControls.squelchThreshold}
+        nrEnable={sdrControls.nrEnable}
+        nrStrength={sdrControls.nrStrength}
+        connected={status === 'connected'}
+        writable={sdrControls.writable}
+        onAudioMuteChange={sdrControls.setAudioMute}
+        onAudioLimitersChange={sdrControls.setAudioLimiters}
+        onSquelchEnableChange={sdrControls.setSquelchEnable}
+        onSquelchThresholdChange={sdrControls.setSquelchThreshold}
+        onNREnableChange={sdrControls.setNREnable}
+        onNRStrengthChange={sdrControls.setNRStrength}
+      />
+
+      <FilterPanel
+        demodMode={tunedBroadcast?.demod_mode ?? null}
+        wfmStereoEnable={sdrControls.wfmStereoEnable}
+        rdsEnable={sdrControls.rdsEnable}
+        nfmDeemphasisEnable={sdrControls.nfmDeemphasisEnable}
+        amLowcut={sdrControls.amLowcut}
+        ssbLowcut={sdrControls.ssbLowcut}
+        nfmLowcut={sdrControls.nfmLowcut}
+        connected={status === 'connected'}
+        writable={sdrControls.writable}
+        onWfmStereoEnableChange={sdrControls.setWfmStereoEnable}
+        onRdsEnableChange={sdrControls.setRdsEnable}
+        onNfmDeemphasisEnableChange={sdrControls.setNfmDeemphasisEnable}
+        onAmLowcutChange={sdrControls.setAmLowcut}
+        onSsbLowcutChange={sdrControls.setSsbLowcut}
+        onNfmLowcutChange={sdrControls.setNfmLowcut}
+      />
+
+      <SpectrumControlPanel
+        spectrumRefLevel={sdrControls.spectrumRefLevel}
+        spectrumBase={sdrControls.spectrumBase}
+        connected={status === 'connected'}
+        writable={sdrControls.writable}
+        onSpectrumRefLevelChange={sdrControls.setSpectrumRefLevel}
+        onSpectrumBaseChange={sdrControls.setSpectrumBase}
       />
 
       <SpectrumPanel

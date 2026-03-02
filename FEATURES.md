@@ -63,14 +63,14 @@ Last updated: 2026-03-02
 - Click on an EiBi marker to tune directly to that known broadcast
 - Frequency readout flips side to stay visible near canvas edges
 
-## Gain Controls (Issues #11/#13)
+## SDR Controls (Issues #11/#13)
 
-- Collapsible gain panel below the now-playing bar (works in GUI and headless mode)
-- LNA state slider with device-reported min/max range and +/- step buttons (RF gain)
-- AGC toggle (on/off) for IF autogain
-- AGC threshold slider (visible when AGC enabled, 0-100 dB)
-- Overload indicator with pulsing warning and troubleshooting hint
-- Compact summary line when collapsed (LNA state, AGC status at a glance)
+- Four collapsible control panels below the now-playing bar (all work in GUI and headless mode)
+- **Gain panel:** LNA state slider with device-reported min/max range, +/- step buttons, AGC toggle, AGC threshold slider, inline OVERLOAD indicator
+- **Audio panel:** SDR-side mute, audio limiters toggle, squelch enable with threshold slider (-150 to 0 dBm), noise reduction enable with strength slider (0-10)
+- **Filters panel:** Mode-specific controls that auto-show for the current demod mode. WFM: stereo/RDS toggles. NFM: de-emphasis toggle + low-cut slider. AM/SAM: low-cut slider. USB/LSB: low-cut slider
+- **Spectrum panel:** Reference level and base level sliders for spectrum/waterfall display range
+- Compact summary lines when collapsed (current state at a glance)
 - Optimistic UI updates with debounced WebSocket sends
 - Post-set verification via get_property with timeout-based read-only detection
 - Real-time WebSocket updates (no save button needed)
