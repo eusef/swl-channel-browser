@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { Broadcast } from '../../shared/types';
-import { pixelToFreqHz, freqHzToPixel, formatFreqHz, DEFAULT_SPAN_HZ } from '../lib/spectrumUtils';
+import { formatFreqHz, DEFAULT_SPAN_HZ, getDisplayFreqRange } from '../lib/spectrumUtils';
 import { stepZoom } from './ZoomBar';
 
 interface SpectrumDisplayProps {
@@ -9,12 +9,15 @@ interface SpectrumDisplayProps {
   peakShiftRef: React.RefObject<number>;
   visible: boolean;
   centerFreqHz: number | null;
+  /** Display span in Hz (zoom level, may be smaller than hardware span) */
   spanHz?: number | null;
+  /** Full hardware FFT span in Hz (total bandwidth of all bins) */
+  hardwareSpanHz?: number | null;
   vfoFreqHz: number | null;
   nearbyBroadcasts?: Broadcast[];
   onTuneToFreq?: (freqHz: number) => void;
   onDragEnd?: (deltaHz: number) => void;
-  onZoomChange?: (sampleRateHz: number) => void;
+  onZoomChange?: (spanHz: number) => void;
   sharedDragOffsetRef: React.RefObject<number>;
   onDragOffsetChange: (px: number) => void;
 }
@@ -32,6 +35,15 @@ const MARKER_LABEL_COLOR = 'rgba(250, 204, 21, 0.9)';
 const CROSSHAIR_COLOR = 'rgba(248, 250, 252, 0.5)';
 const DRAG_THRESHOLD = 6;
 
+/** Compute visible bin range for software zoom */
+function getVisibleBins(totalBins: number, spanHz: number, hardwareSpanHz: number) {
+  if (spanHz >= hardwareSpanHz) return { startBin: 0, visibleCount: totalBins };
+  const ratio = spanHz / hardwareSpanHz;
+  const visibleCount = Math.max(2, Math.round(totalBins * ratio));
+  const startBin = Math.floor((totalBins - visibleCount) / 2);
+  return { startBin, visibleCount };
+}
+
 export default function SpectrumDisplay({
   binsRef,
   frameCountRef,
@@ -39,6 +51,7 @@ export default function SpectrumDisplay({
   visible,
   centerFreqHz,
   spanHz: spanHzProp,
+  hardwareSpanHz: hardwareSpanHzProp,
   vfoFreqHz,
   nearbyBroadcasts = [],
   onTuneToFreq,
@@ -48,6 +61,7 @@ export default function SpectrumDisplay({
   onDragOffsetChange,
 }: SpectrumDisplayProps) {
   const spanHz = spanHzProp ?? DEFAULT_SPAN_HZ;
+  const hardwareSpanHz = hardwareSpanHzProp ?? spanHz;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -123,32 +137,36 @@ export default function SpectrumDisplay({
     const bins = binsRef.current;
     if (!bins || bins.length === 0) return;
 
-    const binCount = bins.length;
-    const xStep = w / binCount;
+    const totalBins = bins.length;
+    const { startBin, visibleCount } = getVisibleBins(totalBins, spanHz, hardwareSpanHz);
+    const xStep = w / visibleCount;
 
     const gradient = ctx.createLinearGradient(0, 0, 0, h);
     gradient.addColorStop(0, FILL_TOP);
     gradient.addColorStop(1, FILL_BOTTOM);
 
-    // Spectrum fill
+    // Spectrum fill (only visible bins)
+    // Plot each bin at the CENTER of its pixel column ((i+0.5)*xStep)
+    // so the spectrum aligns with the waterfall and frequency markers.
+    const halfBin = xStep / 2;
     ctx.beginPath();
-    ctx.moveTo(0 + dragPx, h);
-    for (let i = 0; i < binCount; i++) {
-      const x = i * xStep + dragPx;
-      const amplitude = bins[i] / 255;
+    ctx.moveTo(halfBin + dragPx, h);
+    for (let i = 0; i < visibleCount; i++) {
+      const x = i * xStep + halfBin + dragPx;
+      const amplitude = bins[startBin + i] / 255;
       const y = h - amplitude * h;
       ctx.lineTo(x, y);
     }
-    ctx.lineTo((binCount - 1) * xStep + dragPx, h);
+    ctx.lineTo((visibleCount - 1) * xStep + halfBin + dragPx, h);
     ctx.closePath();
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Spectrum line
+    // Spectrum line (only visible bins)
     ctx.beginPath();
-    for (let i = 0; i < binCount; i++) {
-      const x = i * xStep + dragPx;
-      const amplitude = bins[i] / 255;
+    for (let i = 0; i < visibleCount; i++) {
+      const x = i * xStep + halfBin + dragPx;
+      const amplitude = bins[startBin + i] / 255;
       const y = h - amplitude * h;
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -158,21 +176,22 @@ export default function SpectrumDisplay({
     ctx.stroke();
 
     // EiBi markers with collision avoidance
+    // Use bin-based freq range so markers align with rendered bins
     const newLabelRects: typeof labelRectsRef.current = [];
     if (centerFreqHz && nearbyBroadcasts.length > 0) {
+      const { displayStartFreqHz, displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
       ctx.save();
       ctx.font = '9px Arial, sans-serif';
       ctx.textAlign = 'center';
 
-      // Track occupied label regions to avoid overlap
       const occupied: { left: number; right: number }[] = [];
-      const LABEL_PAD = 4; // min gap between labels in px
+      const LABEL_PAD = 4;
 
       for (const bc of nearbyBroadcasts) {
-        const basePx = freqHzToPixel(bc.freq_hz, w, centerFreqHz, spanHz, shift, binCount);
-        if (basePx === null) continue;
+        const freqOffset = bc.freq_hz - displayStartFreqHz;
+        const basePx = (freqOffset / displaySpanHz) * w;
+        if (basePx < -20 || basePx > w + 20) continue;
         const px = basePx + dragPx;
-        if (px < -20 || px > w + 20) continue;
 
         // Always draw the dashed frequency line
         ctx.strokeStyle = MARKER_COLOR;
@@ -197,7 +216,6 @@ export default function SpectrumDisplay({
         );
         if (overlaps) continue;
 
-        // Place the label
         occupied.push({ left: pillLeft, right: pillRight });
 
         const pillY = 1;
@@ -211,7 +229,6 @@ export default function SpectrumDisplay({
         ctx.fillStyle = MARKER_LABEL_COLOR;
         ctx.fillText(label, labelCenterX, 11);
 
-        // Store hit region for click handling
         newLabelRects.push({ x: pillLeft, y: pillY, w: pillW, h: pillH, freqHz: bc.freq_hz });
       }
       ctx.restore();
@@ -220,9 +237,11 @@ export default function SpectrumDisplay({
 
     // VFO marker (drawn LAST so it's always visible on top of everything)
     if (centerFreqHz && vfoFreqHz) {
-      const vfoPx = freqHzToPixel(vfoFreqHz, w, centerFreqHz, spanHz, shift, binCount);
-      if (vfoPx !== null) {
-        const markerX = vfoPx + dragPx;
+      const { displayStartFreqHz: vfoStart, displaySpanHz: vfoSpan } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
+      const freqOffset = vfoFreqHz - vfoStart;
+      const vfoPx = (freqOffset / vfoSpan) * w;
+      const markerX = vfoPx + dragPx;
+      if (markerX > -10 && markerX < w + 10) {
         ctx.strokeStyle = VFO_MARKER_COLOR;
         ctx.lineWidth = 2.5;
         ctx.setLineDash([6, 4]);
@@ -235,7 +254,7 @@ export default function SpectrumDisplay({
     }
 
     lastDrawnOffsetRef.current = dragPx;
-  }, [binsRef, peakShiftRef, centerFreqHz, spanHz, vfoFreqHz, nearbyBroadcasts, sharedDragOffsetRef]);
+  }, [binsRef, peakShiftRef, centerFreqHz, spanHz, hardwareSpanHz, vfoFreqHz, nearbyBroadcasts, sharedDragOffsetRef]);
 
   const drawOverlay = useCallback(() => {
     const overlay = overlayRef.current;
@@ -254,8 +273,6 @@ export default function SpectrumDisplay({
     const hx = hoverXRef.current;
     if (hx === null || !centerFreqHz) return;
 
-    const shift = peakShiftRef.current ?? 0;
-    const binCount = binsRef.current?.length ?? 256;
     const dragPx = sharedDragOffsetRef.current ?? 0;
 
     ctx.strokeStyle = CROSSHAIR_COLOR;
@@ -267,7 +284,11 @@ export default function SpectrumDisplay({
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const freqHz = pixelToFreqHz(hx - dragPx, w, centerFreqHz, spanHz, shift, binCount);
+    // Frequency label: use bin-based range for accuracy when zoomed
+    const totalBins = binsRef.current?.length || 0;
+    const { displayStartFreqHz, displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
+    const norm = (hx - dragPx) / w;
+    const freqHz = Math.round(displayStartFreqHz + norm * displaySpanHz);
     const label = formatFreqHz(freqHz);
 
     ctx.font = '11px monospace';
@@ -284,7 +305,7 @@ export default function SpectrumDisplay({
 
     ctx.fillStyle = '#f8fafc';
     ctx.fillText(label, textX, h - 8);
-  }, [centerFreqHz, spanHz, peakShiftRef, binsRef, sharedDragOffsetRef]);
+  }, [centerFreqHz, spanHz, hardwareSpanHz, binsRef, sharedDragOffsetRef]);
 
   // Pointer handlers
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -341,9 +362,10 @@ export default function SpectrumDisplay({
         const canvas = overlayRef.current;
         if (canvas) {
           const w = canvas.width / dprRef.current;
-          const shift = peakShiftRef.current ?? 0;
-          const binCount = binsRef.current?.length ?? 256;
-          const freqHz = pixelToFreqHz(x, w, centerFreqHz, spanHz, shift, binCount);
+          const totalBins = binsRef.current?.length || 0;
+          const { displayStartFreqHz, displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
+          const norm = x / w;
+          const freqHz = Math.round(displayStartFreqHz + norm * displaySpanHz);
           onTuneToFreq(freqHz);
         }
       }
@@ -351,8 +373,10 @@ export default function SpectrumDisplay({
       const canvas = overlayRef.current;
       if (canvas) {
         const w = canvas.width / dprRef.current;
+        const totalBins = binsRef.current?.length || 0;
+        const { displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
         const totalDragPx = sharedDragOffsetRef.current ?? 0;
-        const deltaHz = -(totalDragPx / w) * spanHz;
+        const deltaHz = -(totalDragPx / w) * displaySpanHz;
         onDragEnd(deltaHz);
       }
     }
@@ -360,7 +384,7 @@ export default function SpectrumDisplay({
     onDragOffsetChange(0);
     pointerDownRef.current = null;
     isDraggingRef.current = false;
-  }, [centerFreqHz, spanHz, onTuneToFreq, onDragEnd, peakShiftRef, binsRef, sharedDragOffsetRef, onDragOffsetChange]);
+  }, [centerFreqHz, spanHz, hardwareSpanHz, binsRef, onTuneToFreq, onDragEnd, sharedDragOffsetRef, onDragOffsetChange]);
 
   const handlePointerLeave = useCallback(() => {
     hoverXRef.current = null;
@@ -370,8 +394,10 @@ export default function SpectrumDisplay({
       const canvas = overlayRef.current;
       if (canvas) {
         const w = canvas.width / dprRef.current;
+        const totalBins = binsRef.current?.length || 0;
+        const { displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
         const totalDragPx = sharedDragOffsetRef.current ?? 0;
-        const deltaHz = -(totalDragPx / w) * spanHz;
+        const deltaHz = -(totalDragPx / w) * displaySpanHz;
         onDragEnd(deltaHz);
       }
     }
@@ -379,7 +405,7 @@ export default function SpectrumDisplay({
     onDragOffsetChange(0);
     pointerDownRef.current = null;
     isDraggingRef.current = false;
-  }, [drawOverlay, onDragEnd, centerFreqHz, spanHz, sharedDragOffsetRef, onDragOffsetChange]);
+  }, [drawOverlay, onDragEnd, centerFreqHz, spanHz, hardwareSpanHz, binsRef, sharedDragOffsetRef, onDragOffsetChange]);
 
   // Scroll-to-zoom handler
   useEffect(() => {
@@ -413,7 +439,6 @@ export default function SpectrumDisplay({
       const currentOffset = sharedDragOffsetRef.current ?? 0;
       const isDragging = currentOffset !== 0;
 
-      // Redraw if: new spectrum data arrived (and not dragging), or drag offset changed
       const newFrame = currentFrame !== lastFrameRef.current;
       const offsetChanged = currentOffset !== lastDrawnOffsetRef.current;
 

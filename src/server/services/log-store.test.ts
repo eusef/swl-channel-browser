@@ -48,6 +48,7 @@ describe('log-store', () => {
       signal_power: -45,
       signal_snr: 31,
       notes: 'Very clear',
+      source: 'schedule',
     });
 
     expect(entry.id).toBeDefined();
@@ -67,6 +68,7 @@ describe('log-store', () => {
       signal_power: null,
       signal_snr: null,
       notes: '',
+      source: 'schedule',
     });
 
     const loaded = loadLog();
@@ -83,6 +85,7 @@ describe('log-store', () => {
       signal_power: -50,
       signal_snr: 20,
       notes: '',
+      source: 'schedule',
     });
 
     expect(removeLogEntry(entry.id)).toBe(true);
@@ -102,6 +105,7 @@ describe('log-store', () => {
       signal_power: null,
       signal_snr: null,
       notes: '',
+      source: 'schedule',
     });
 
     expect(entry.signal_power).toBeNull();
@@ -117,6 +121,7 @@ describe('log-store', () => {
       signal_power: -45,
       signal_snr: 31,
       notes: 'Clear signal',
+      source: 'schedule',
     });
     addLogEntry({
       freq_khz: 6000,
@@ -126,6 +131,7 @@ describe('log-store', () => {
       signal_power: null,
       signal_snr: null,
       notes: '',
+      source: 'schedule',
     });
 
     const csv = exportCsv();
@@ -157,6 +163,7 @@ describe('log-store', () => {
       signal_power: -50,
       signal_snr: 20,
       notes: 'Notes, with comma',
+      source: 'schedule',
     });
 
     const csv = exportCsv();
@@ -166,9 +173,9 @@ describe('log-store', () => {
   });
 
   it('handles multiple entries', () => {
-    addLogEntry({ freq_khz: 9500, station: 'CRI', language: 'E', target: 'NAm', signal_power: -45, signal_snr: 31, notes: '' });
-    addLogEntry({ freq_khz: 6000, station: 'RHC', language: 'S', target: 'CAm', signal_power: -60, signal_snr: 15, notes: '' });
-    addLogEntry({ freq_khz: 9700, station: 'VOA', language: 'E', target: 'Af', signal_power: -70, signal_snr: 8, notes: '' });
+    addLogEntry({ freq_khz: 9500, station: 'CRI', language: 'E', target: 'NAm', signal_power: -45, signal_snr: 31, notes: '', source: 'schedule' });
+    addLogEntry({ freq_khz: 6000, station: 'RHC', language: 'S', target: 'CAm', signal_power: -60, signal_snr: 15, notes: '', source: 'manual' });
+    addLogEntry({ freq_khz: 9700, station: 'VOA', language: 'E', target: 'Af', signal_power: -70, signal_snr: 8, notes: '', source: 'waterfall' });
 
     expect(loadLog()).toHaveLength(3);
   });

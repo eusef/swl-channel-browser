@@ -7,11 +7,15 @@ export const ZOOM_PRESETS = [
   { label: '50k', hz: 50_000 },
 ] as const;
 
-/** Find the nearest preset to a given sample rate */
-export function nearestPreset(hz: number): number {
-  let best: number = ZOOM_PRESETS[0].hz;
+/** Find the nearest preset to a given span (optionally capped by maxHz) */
+export function nearestPreset(hz: number, maxHz?: number): number {
+  const presets = maxHz
+    ? ZOOM_PRESETS.filter(p => p.hz <= maxHz)
+    : [...ZOOM_PRESETS];
+  if (presets.length === 0) return ZOOM_PRESETS[ZOOM_PRESETS.length - 1].hz;
+  let best: number = presets[0].hz;
   let bestDist = Math.abs(hz - best);
-  for (const p of ZOOM_PRESETS) {
+  for (const p of presets) {
     const d = Math.abs(hz - p.hz);
     if (d < bestDist) {
       best = p.hz;
@@ -22,34 +26,45 @@ export function nearestPreset(hz: number): number {
 }
 
 /** Step to next zoom level (negative = zoom in / narrower, positive = zoom out / wider) */
-export function stepZoom(currentHz: number, direction: -1 | 1): number {
-  const nearest = nearestPreset(currentHz);
+export function stepZoom(currentHz: number, direction: -1 | 1, maxHz?: number): number {
+  const nearest = nearestPreset(currentHz, maxHz);
   const idx = ZOOM_PRESETS.findIndex(p => p.hz === nearest);
   // direction -1 = zoom in = higher index (smaller Hz)
   // direction +1 = zoom out = lower index (larger Hz)
   const newIdx = Math.max(0, Math.min(ZOOM_PRESETS.length - 1, idx - direction));
-  return ZOOM_PRESETS[newIdx].hz;
+  const newHz = ZOOM_PRESETS[newIdx].hz;
+  // Cap at max if specified
+  if (maxHz && newHz > maxHz) return nearest;
+  return newHz;
 }
 
 interface ZoomBarProps {
   currentZoomHz: number;
-  onZoomChange: (sampleRateHz: number) => void;
+  onZoomChange: (spanHz: number) => void;
+  /** Maximum zoom-out span (hardware FFT bandwidth). Presets above this are hidden. */
+  maxZoomHz?: number;
 }
 
-export default function ZoomBar({ currentZoomHz, onZoomChange }: ZoomBarProps) {
-  const activePreset = nearestPreset(currentZoomHz);
+export default function ZoomBar({ currentZoomHz, onZoomChange, maxZoomHz }: ZoomBarProps) {
+  const activePreset = nearestPreset(currentZoomHz, maxZoomHz);
+  const visiblePresets = maxZoomHz
+    ? ZOOM_PRESETS.filter(p => p.hz <= maxZoomHz)
+    : ZOOM_PRESETS;
+
+  const maxPreset = visiblePresets.length > 0 ? visiblePresets[0].hz : ZOOM_PRESETS[0].hz;
+  const minPreset = visiblePresets.length > 0 ? visiblePresets[visiblePresets.length - 1].hz : ZOOM_PRESETS[ZOOM_PRESETS.length - 1].hz;
 
   return (
     <div className="flex items-center gap-1">
       <button
-        onClick={() => onZoomChange(stepZoom(currentZoomHz, 1))}
-        disabled={activePreset >= ZOOM_PRESETS[0].hz}
+        onClick={() => onZoomChange(stepZoom(currentZoomHz, 1, maxZoomHz))}
+        disabled={activePreset >= maxPreset}
         className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
         title="Zoom out"
       >
         -
       </button>
-      {ZOOM_PRESETS.map((p) => (
+      {visiblePresets.map((p) => (
         <button
           key={p.hz}
           onClick={() => onZoomChange(p.hz)}
@@ -63,8 +78,8 @@ export default function ZoomBar({ currentZoomHz, onZoomChange }: ZoomBarProps) {
         </button>
       ))}
       <button
-        onClick={() => onZoomChange(stepZoom(currentZoomHz, -1))}
-        disabled={activePreset <= ZOOM_PRESETS[ZOOM_PRESETS.length - 1].hz}
+        onClick={() => onZoomChange(stepZoom(currentZoomHz, -1, maxZoomHz))}
+        disabled={activePreset <= minPreset}
         className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
         title="Zoom in"
       >

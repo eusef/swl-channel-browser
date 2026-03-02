@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { pixelToFreqHz, freqHzToPixel, formatFreqHz, DEFAULT_SPAN_HZ } from '../lib/spectrumUtils';
+import { formatFreqHz, DEFAULT_SPAN_HZ, getDisplayFreqRange } from '../lib/spectrumUtils';
 import { stepZoom } from './ZoomBar';
 
 interface WaterfallDisplayProps {
@@ -8,11 +8,14 @@ interface WaterfallDisplayProps {
   peakShiftRef: React.RefObject<number>;
   visible: boolean;
   centerFreqHz: number | null;
+  /** Display span in Hz (zoom level, may be smaller than hardware span) */
   spanHz?: number | null;
+  /** Full hardware FFT span in Hz (total bandwidth of all bins) */
+  hardwareSpanHz?: number | null;
   vfoFreqHz: number | null;
   onTuneToFreq?: (freqHz: number) => void;
   onDragEnd?: (deltaHz: number) => void;
-  onZoomChange?: (sampleRateHz: number) => void;
+  onZoomChange?: (spanHz: number) => void;
   sharedDragOffsetRef: React.RefObject<number>;
   onDragOffsetChange: (px: number) => void;
 }
@@ -53,6 +56,15 @@ function buildColorLUT(): Uint8Array {
 
 const COLOR_LUT = buildColorLUT();
 
+/** Compute visible bin range for software zoom */
+function getVisibleBins(totalBins: number, spanHz: number, hardwareSpanHz: number) {
+  if (spanHz >= hardwareSpanHz) return { startBin: 0, visibleCount: totalBins };
+  const ratio = spanHz / hardwareSpanHz;
+  const visibleCount = Math.max(2, Math.round(totalBins * ratio));
+  const startBin = Math.floor((totalBins - visibleCount) / 2);
+  return { startBin, visibleCount };
+}
+
 export default function WaterfallDisplay({
   binsRef,
   frameCountRef,
@@ -60,6 +72,7 @@ export default function WaterfallDisplay({
   visible,
   centerFreqHz,
   spanHz: spanHzProp,
+  hardwareSpanHz: hardwareSpanHzProp,
   vfoFreqHz,
   onTuneToFreq,
   onDragEnd,
@@ -68,6 +81,7 @@ export default function WaterfallDisplay({
   onDragOffsetChange,
 }: WaterfallDisplayProps) {
   const spanHz = spanHzProp ?? DEFAULT_SPAN_HZ;
+  const hardwareSpanHz = hardwareSpanHzProp ?? spanHz;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -94,17 +108,18 @@ export default function WaterfallDisplay({
     const w = overlay.width / dpr;
     const h = overlay.height / dpr;
     const dragPx = sharedDragOffsetRef.current ?? 0;
-    const shift = peakShiftRef.current ?? 0;
-    const binCount = binsRef.current?.length ?? 256;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    // VFO marker (tracks with drag)
+    // VFO marker (tracks with drag) - use bin-based range for alignment
     if (centerFreqHz && vfoFreqHz) {
-      const vfoPx = freqHzToPixel(vfoFreqHz, w, centerFreqHz, spanHz, shift, binCount);
-      if (vfoPx !== null) {
-        const markerX = Math.floor(vfoPx + dragPx) + 0.5;
+      const totalBins = binsRef.current?.length || 0;
+      const { displayStartFreqHz, displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
+      const freqOffset = vfoFreqHz - displayStartFreqHz;
+      const vfoPx = (freqOffset / displaySpanHz) * w;
+      const markerX = Math.floor(vfoPx + dragPx) + 0.5;
+      if (markerX > -10 && markerX < w + 10) {
         ctx.strokeStyle = VFO_MARKER_COLOR;
         ctx.lineWidth = 2;
         ctx.setLineDash([6, 4]);
@@ -129,7 +144,11 @@ export default function WaterfallDisplay({
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const freqHz = pixelToFreqHz(hx - dragPx, w, centerFreqHz, spanHz, shift, binCount);
+    // Frequency label: use bin-based range for accuracy when zoomed
+    const totalBinsLabel = binsRef.current?.length || 0;
+    const { displayStartFreqHz: labelStart, displaySpanHz: labelSpan } = getDisplayFreqRange(totalBinsLabel, spanHz, hardwareSpanHz, centerFreqHz);
+    const norm = (hx - dragPx) / w;
+    const freqHz = Math.round(labelStart + norm * labelSpan);
     const label = formatFreqHz(freqHz);
 
     ctx.font = '11px monospace';
@@ -148,7 +167,7 @@ export default function WaterfallDisplay({
     ctx.fillText(label, textX, 14);
 
     lastDrawnOffsetRef.current = dragPx;
-  }, [centerFreqHz, spanHz, vfoFreqHz, peakShiftRef, binsRef, sharedDragOffsetRef]);
+  }, [centerFreqHz, spanHz, hardwareSpanHz, binsRef, vfoFreqHz, sharedDragOffsetRef]);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -193,26 +212,28 @@ export default function WaterfallDisplay({
     if (!bins || bins.length === 0) return;
 
     const dpr = dprRef.current;
-    // Work at physical pixel level for waterfall bitmap operations
-    const pw = canvas.width;   // physical width (logical * dpr)
-    const ph = canvas.height;  // physical height (logical * dpr)
-    const binCount = bins.length;
+    const pw = canvas.width;   // physical width
+    const ph = canvas.height;  // physical height
+    const totalBins = bins.length;
+    const { startBin, visibleCount } = getVisibleBins(totalBins, spanHz, hardwareSpanHz);
 
-    // Reset transform for raw pixel operations (drawImage/putImageData)
+    // Reset transform for raw pixel operations
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     // Scroll existing waterfall down by dpr pixels (1 logical row)
     const scrollPx = Math.round(dpr);
     ctx.drawImage(canvas, 0, 0, pw, ph, 0, scrollPx, pw, ph);
 
-    // Draw new top rows (dpr physical rows = 1 logical row)
+    // Draw new top rows (only visible bins, stretched to full width)
     const imageData = ctx.createImageData(pw, scrollPx);
     const pixels = imageData.data;
 
     for (let row = 0; row < scrollPx; row++) {
       for (let x = 0; x < pw; x++) {
-        const displayBin = Math.floor((x / pw) * binCount);
-        const val = bins[Math.min(displayBin, binCount - 1)];
+        // Map pixel position to a bin within the visible range
+        const displayBin = Math.floor((x / pw) * visibleCount);
+        const actualBin = startBin + Math.min(displayBin, visibleCount - 1);
+        const val = bins[actualBin];
         const lutIdx = val * 3;
 
         const pixelIdx = (row * pw + x) * 4;
@@ -224,7 +245,7 @@ export default function WaterfallDisplay({
     }
 
     ctx.putImageData(imageData, 0, 0);
-  }, [binsRef]);
+  }, [binsRef, spanHz, hardwareSpanHz]);
 
   // Pointer handlers
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -262,17 +283,20 @@ export default function WaterfallDisplay({
       const overlay = overlayRef.current;
       if (overlay) {
         const w = overlay.width / dprRef.current;
-        const shift = peakShiftRef.current ?? 0;
-        const binCount = binsRef.current?.length ?? 256;
-        const freqHz = pixelToFreqHz(x, w, centerFreqHz, spanHz, shift, binCount);
+        const totalBins = binsRef.current?.length || 0;
+        const { displayStartFreqHz, displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
+        const norm = x / w;
+        const freqHz = Math.round(displayStartFreqHz + norm * displaySpanHz);
         onTuneToFreq(freqHz);
       }
     } else if (isDraggingRef.current && onDragEnd && centerFreqHz) {
       const overlay = overlayRef.current;
       if (overlay) {
         const w = overlay.width / dprRef.current;
+        const totalBins = binsRef.current?.length || 0;
+        const { displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
         const totalDragPx = sharedDragOffsetRef.current ?? 0;
-        const deltaHz = -(totalDragPx / w) * spanHz;
+        const deltaHz = -(totalDragPx / w) * displaySpanHz;
         onDragEnd(deltaHz);
       }
     }
@@ -280,7 +304,7 @@ export default function WaterfallDisplay({
     onDragOffsetChange(0);
     pointerDownRef.current = null;
     isDraggingRef.current = false;
-  }, [centerFreqHz, spanHz, onTuneToFreq, onDragEnd, peakShiftRef, binsRef, sharedDragOffsetRef, onDragOffsetChange]);
+  }, [centerFreqHz, spanHz, hardwareSpanHz, binsRef, onTuneToFreq, onDragEnd, sharedDragOffsetRef, onDragOffsetChange]);
 
   const handlePointerLeave = useCallback(() => {
     hoverXRef.current = null;
@@ -290,8 +314,10 @@ export default function WaterfallDisplay({
       const overlay = overlayRef.current;
       if (overlay) {
         const w = overlay.width / dprRef.current;
+        const totalBins = binsRef.current?.length || 0;
+        const { displaySpanHz } = getDisplayFreqRange(totalBins, spanHz, hardwareSpanHz, centerFreqHz);
         const totalDragPx = sharedDragOffsetRef.current ?? 0;
-        const deltaHz = -(totalDragPx / w) * spanHz;
+        const deltaHz = -(totalDragPx / w) * displaySpanHz;
         onDragEnd(deltaHz);
       }
     }
@@ -299,7 +325,7 @@ export default function WaterfallDisplay({
     onDragOffsetChange(0);
     pointerDownRef.current = null;
     isDraggingRef.current = false;
-  }, [drawOverlayWithCursor, onDragEnd, centerFreqHz, spanHz, sharedDragOffsetRef, onDragOffsetChange]);
+  }, [drawOverlayWithCursor, onDragEnd, centerFreqHz, spanHz, hardwareSpanHz, binsRef, sharedDragOffsetRef, onDragOffsetChange]);
 
   // Scroll-to-zoom handler
   useEffect(() => {
@@ -336,13 +362,11 @@ export default function WaterfallDisplay({
       const offsetChanged = currentOffset !== lastDrawnOffsetRef.current;
 
       if (newFrame && !isDragging) {
-        // Normal mode: add new waterfall line
         lastFrameRef.current = currentFrame;
         drawWaterfallLine();
       }
 
       if (offsetChanged) {
-        // Drag offset changed: redraw overlay (VFO marker tracks)
         drawOverlayWithCursor();
       }
 

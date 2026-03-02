@@ -4,6 +4,25 @@ All notable changes to the SWL Channel Browser are documented here.
 
 ## [Unreleased]
 
+### Issues #7/#9 - Reception Log Source Tracking + Unicode Fix
+
+**Added**
+
+- `source` field on `ReceptionLogEntry`: tracks whether station came from schedule, manual entry, or waterfall tune
+- Colored source badges on log entries and log form (Schedule=blue, Manual=green, Waterfall=amber)
+- Editable station name input for ad-hoc/waterfall entries in the log form
+- Source column in CSV export
+- `tuneSource` state in App.tsx tracks how the current station was tuned
+
+**Fixed**
+
+- EiBi CSV encoding: fetch now decodes as Latin-1 instead of assuming UTF-8, fixing garbled characters in station names (e.g., "Rádio Scalla FM" instead of "R?dio Scalla FM")
+- Station name no longer required in log POST endpoint (ad-hoc entries may not have one)
+
+**Changed**
+
+- Existing log entries without a source field automatically migrate to "schedule" on load
+
 ### Issues #14/#15 - Frequency Tweak Bar + Passband Zoom
 
 **Added**

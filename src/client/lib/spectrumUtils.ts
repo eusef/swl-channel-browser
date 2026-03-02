@@ -82,6 +82,47 @@ export function freqHzToPixel(
 }
 
 /**
+ * Compute the actual frequency range displayed when software-zoomed.
+ *
+ * getVisibleBins() rounds visibleCount and floors startBin, so the true
+ * displayed bandwidth (visibleCount * hzPerBin) differs slightly from the
+ * nominal spanHz.  All frequency↔pixel mappings must use these values
+ * instead of the nominal spanHz to stay aligned with the rendered bins.
+ */
+export function getDisplayFreqRange(
+  totalBins: number,
+  spanHz: number,
+  hardwareSpanHz: number,
+  centerFreqHz: number,
+): { displayStartFreqHz: number; displaySpanHz: number } {
+  if (totalBins === 0) {
+    return {
+      displayStartFreqHz: centerFreqHz - spanHz / 2,
+      displaySpanHz: spanHz,
+    };
+  }
+  const visibleCount =
+    spanHz >= hardwareSpanHz
+      ? totalBins
+      : Math.max(2, Math.round(totalBins * (spanHz / hardwareSpanHz)));
+  const startBin =
+    spanHz >= hardwareSpanHz
+      ? 0
+      : Math.floor((totalBins - visibleCount) / 2);
+  const hzPerBin = hardwareSpanHz / totalBins;
+  // Shift left by half a bin so that frequency markers land on bin CENTERS
+  // rather than bin LEFT EDGES.  The waterfall paints each bin as a solid
+  // column whose visual center is at (i+0.5)/visibleCount * width; this
+  // offset makes the freq→pixel mapping match that center.  The trade-off
+  // is ±½-bin (~hzPerBin/2) precision on the hover readout, which is
+  // negligible relative to the bin resolution.
+  return {
+    displayStartFreqHz: centerFreqHz - hardwareSpanHz / 2 + startBin * hzPerBin - hzPerBin / 2,
+    displaySpanHz: visibleCount * hzPerBin,
+  };
+}
+
+/**
  * Format a frequency in Hz to a human-readable string.
  * Uses kHz for < 30 MHz, MHz for >= 30 MHz.
  */

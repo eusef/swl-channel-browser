@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Broadcast, AppConfig, DemodMode } from '../shared/types';
+import { Broadcast, AppConfig, DemodMode, LogSource } from '../shared/types';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useSchedule } from './hooks/useSchedule';
 import { useFilters } from './hooks/useFilters';
@@ -58,10 +58,12 @@ function MainView() {
   const [viewMode, setViewMode] = useState<ViewMode>('now');
   const [lookaheadHours, setLookaheadHours] = useState(3);
   const [tunedBroadcast, setTunedBroadcast] = useState<Broadcast | null>(null);
+  const [tuneSource, setTuneSource] = useState<LogSource>('schedule');
   const [spectrumExpanded, setSpectrumExpanded] = useState(false);
   const [deviceCenterHz, setDeviceCenterHz] = useState<number | null>(null);
   const [deviceSampleRate, setDeviceSampleRate] = useState<number | null>(null);
-  const tuneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [iqSampleRate, setIqSampleRate] = useState<number | null>(null);
+  const [zoomSpanHz, setZoomSpanHz] = useState<number | null>(null);
   const retuneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTunedFreqRef = useRef<number>(0);
 
@@ -85,23 +87,60 @@ function MainView() {
   useEffect(() => {
     const client = getClient();
     if (!client) return;
+
+    // Read cached values that may have arrived before this callback was registered
+    // (the client sends getProperty calls on connect; responses can arrive before
+    // React's useEffect fires)
+    const cachedCenter = client.getDeviceCenterHz();
+    if (cachedCenter && cachedCenter > 0) setDeviceCenterHz(cachedCenter);
+    const cachedSR = client.getDeviceSampleRate();
+    if (cachedSR && cachedSR > 0) setDeviceSampleRate(cachedSR);
+    const cachedIQ = client.getIqSampleRate();
+    if (cachedIQ && cachedIQ > 0) setIqSampleRate(cachedIQ);
+
     const unsub = client.onPropertyChange((prop, value) => {
       if (prop === 'device_center_frequency') {
         const hz = parseFloat(value);
+        console.log(`[SDR] center_freq confirmed: ${value} Hz (${hz / 1000} kHz)`);
         if (!isNaN(hz) && hz > 0) setDeviceCenterHz(hz);
+      } else if (prop === 'device_vfo_frequency') {
+        const hz = parseFloat(value);
+        console.log(`[SDR] vfo_freq confirmed: ${value} Hz (${hz / 1000} kHz)`);
+        // Update displayed frequency to match what SDRConnect actually tuned to
+        if (!isNaN(hz) && hz > 0) {
+          setTunedBroadcast(prev => {
+            if (!prev) return prev;
+            // Only update if the VFO differs meaningfully (>10 Hz) from what we requested
+            if (Math.abs(prev.freq_hz - hz) < 10) return prev;
+            return {
+              ...prev,
+              freq_hz: hz,
+              freq_khz: Math.round((hz / 1000) * 10) / 10,
+            };
+          });
+        }
       } else if (prop === 'device_sample_rate') {
         const hz = parseFloat(value);
+        console.log(`[SDR] sample_rate: ${value} Hz`);
         if (!isNaN(hz) && hz > 0) setDeviceSampleRate(hz);
+      } else if (prop === 'iq_sample_rate') {
+        const hz = parseFloat(value);
+        console.log(`[SDR] iq_sample_rate: ${value} Hz`);
+        if (!isNaN(hz) && hz > 0) setIqSampleRate(hz);
       }
     });
     return unsub;
   }, [getClient, status]);
 
+  // The actual FFT span from hardware (iq_sample_rate preferred, falls back to device_sample_rate)
+  const hardwareSpanHz = iqSampleRate ?? deviceSampleRate ?? 1_000_000;
+  const effectiveSpanHz = zoomSpanHz ?? hardwareSpanHz;
+
   const spectrumEnabled = spectrumExpanded && tunedBroadcast !== null;
   const { binsRef, frameCountRef, peakShiftRef } = useSpectrum(getClient, status, spectrumEnabled);
   const nearbyBroadcasts = useNearbyBroadcasts(
     spectrumEnabled ? (deviceCenterHz ? Math.round(deviceCenterHz / 1000) : null) : null,
-    deviceSampleRate ? Math.round(deviceSampleRate / 1000) : 1000,
+    hardwareSpanHz ? Math.round(hardwareSpanHz / 1000) : 1000,
   );
   const { propagation, loading: propagationLoading } = usePropagation();
   const recording = useRecording();
@@ -163,64 +202,62 @@ function MainView() {
 
   const handleTune = useCallback(
     (broadcast: Broadcast) => {
-      // Debounce: 300ms between user tune actions
-      if (tuneTimerRef.current) {
-        clearTimeout(tuneTimerRef.current);
+      const client = getClient();
+      if (!client) return;
+
+      // For generic broadcasts (SAM from parser), use config default if set
+      let demodMode = broadcast.demod_mode;
+      let bw = broadcast.bandwidth;
+      if (
+        config?.default_demod &&
+        (broadcast.demod_mode === 'SAM' || broadcast.demod_mode === 'AM')
+      ) {
+        demodMode = config.default_demod;
+        bw = bandwidthForMode(demodMode);
       }
 
-      tuneTimerRef.current = setTimeout(() => {
-        const client = getClient();
-        if (!client) return;
+      // Safety: SDRconnect does not support plain 'AM' - always use 'SAM'
+      if (demodMode === 'AM') {
+        demodMode = 'SAM';
+        bw = bandwidthForMode('SAM');
+      }
 
-        // For generic broadcasts (SAM from parser), use config default if set
-        let demodMode = broadcast.demod_mode;
-        let bw = broadcast.bandwidth;
-        if (
-          config?.default_demod &&
-          (broadcast.demod_mode === 'SAM' || broadcast.demod_mode === 'AM')
-        ) {
-          demodMode = config.default_demod;
-          bw = bandwidthForMode(demodMode);
-        }
+      // Detect large frequency jumps (>1 MHz) where AGC may need to resettle
+      const prevFreq = lastTunedFreqRef.current;
+      const freqDeltaKhz = prevFreq ? Math.abs(broadcast.freq_khz - prevFreq) : 0;
+      const isLargeJump = freqDeltaKhz > 1000;
 
-        // Safety: SDRconnect does not support plain 'AM' - always use 'SAM'
-        if (demodMode === 'AM') {
-          demodMode = 'SAM';
-          bw = bandwidthForMode('SAM');
-        }
+      // Fire tune commands immediately (no debounce) so SDRConnect always
+      // receives the frequency change without delay
+      client.tune(broadcast.freq_hz);
+      client.setDemodulator(demodMode);
+      client.setBandwidth(bw);
 
-        // Detect large frequency jumps (>1 MHz) where AGC may need to resettle
-        const prevFreq = lastTunedFreqRef.current;
-        const freqDeltaKhz = prevFreq ? Math.abs(broadcast.freq_khz - prevFreq) : 0;
-        const isLargeJump = freqDeltaKhz > 1000;
+      lastTunedFreqRef.current = broadcast.freq_khz;
+      setTunedBroadcast({ ...broadcast, demod_mode: demodMode, bandwidth: bw });
+      // Source is set by the caller (handleSpectrumTune, handleManualTune, etc.)
+      // Default to 'schedule' for direct handleTune calls from station list
+      if (broadcast.station) setTuneSource('schedule');
 
-        client.tune(broadcast.freq_hz);
-        client.setDemodulator(demodMode);
-        client.setBandwidth(bw);
+      // After a large frequency jump, cycle the SDRconnect audio stream
+      // to reset internal gain levels (mirrors manual play/pause toggle)
+      if (isLargeJump && audio.isPlaying) {
+        if (retuneTimerRef.current) clearTimeout(retuneTimerRef.current);
+        retuneTimerRef.current = setTimeout(() => {
+          const c = getClient();
+          if (c) {
+            c.stopAudio();
+            setTimeout(() => {
+              c.startAudio();
+            }, 200);
+          }
+        }, 400);
+      }
 
-        lastTunedFreqRef.current = broadcast.freq_khz;
-        setTunedBroadcast({ ...broadcast, demod_mode: demodMode, bandwidth: bw });
-
-        // After a large frequency jump, cycle the SDRconnect audio stream
-        // to reset internal gain levels (mirrors manual play/pause toggle)
-        if (isLargeJump && audio.isPlaying) {
-          if (retuneTimerRef.current) clearTimeout(retuneTimerRef.current);
-          retuneTimerRef.current = setTimeout(() => {
-            const c = getClient();
-            if (c) {
-              c.stopAudio();
-              setTimeout(() => {
-                c.startAudio();
-              }, 200);
-            }
-          }, 400);
-        }
-
-        // Auto-play audio if configured
-        if (config?.auto_play_audio && !audio.isPlaying) {
-          audio.startAudio();
-        }
-      }, 300);
+      // Auto-play audio if configured
+      if (config?.auto_play_audio && !audio.isPlaying) {
+        audio.startAudio();
+      }
     },
     [getClient, config?.auto_play_audio, config?.default_demod, audio]
   );
@@ -268,14 +305,17 @@ function MainView() {
 
   // Spectrum/waterfall click-to-tune: creates an ad-hoc broadcast for the clicked frequency
   const handleSpectrumTune = useCallback((freqHz: number) => {
+    console.log(`[TUNE] Spectrum click: freq=${freqHz} Hz (${(freqHz / 1000).toFixed(1)} kHz), center=${deviceCenterHz}, hwSpan=${hardwareSpanHz}, zoom=${zoomSpanHz}, effectiveSpan=${effectiveSpanHz}`);
     const freqKhz = freqHz / 1000;
     // Check if a nearby EiBi broadcast matches (within 1 kHz)
     const match = nearbyBroadcasts.find(
       b => Math.abs(b.freq_khz - freqKhz) < 1,
     );
     if (match) {
+      setTuneSource('schedule');
       handleTune(match);
     } else {
+      setTuneSource('waterfall');
       // Create ad-hoc broadcast entry
       const demod: DemodMode = config?.default_demod || 'SAM';
       const adHoc: Broadcast = {
@@ -309,6 +349,7 @@ function MainView() {
     const newFreqHz = Math.max(1000, tunedBroadcast.freq_hz + Math.round(deltaHz));
     const newFreqKhz = newFreqHz / 1000;
 
+    setTuneSource('waterfall');
     client.tune(newFreqHz);
     setTunedBroadcast(prev => prev ? {
       ...prev,
@@ -336,12 +377,12 @@ function MainView() {
     lastTunedFreqRef.current = newHz / 1000;
   }, [getClient, tunedBroadcast]);
 
-  // Zoom: change device sample rate
-  const handleZoomChange = useCallback((sampleRateHz: number) => {
-    const client = getClient();
-    if (!client) return;
-    client.setSampleRate(sampleRateHz);
-  }, [getClient]);
+  // Zoom: software crop (don't change hardware sample rate, just crop bins client-side)
+  const handleZoomChange = useCallback((spanHz: number) => {
+    // Cap at hardware span (can't zoom wider than the FFT data covers)
+    const capped = Math.min(spanHz, hardwareSpanHz);
+    setZoomSpanHz(capped >= hardwareSpanHz ? null : capped);
+  }, [hardwareSpanHz]);
 
   // Read current step size for keyboard shortcuts
   const currentStepHz = (() => {
@@ -358,7 +399,7 @@ function MainView() {
   useKeyboardShortcuts({
     active: tunedBroadcast !== null,
     stepHz: currentStepHz,
-    currentZoomHz: deviceSampleRate ?? 1_000_000,
+    currentZoomHz: effectiveSpanHz,
     onFrequencyAdjust: handleFrequencyAdjust,
     onZoomChange: handleZoomChange,
   });
@@ -366,6 +407,7 @@ function MainView() {
   const handleManualTune = useCallback((params: { freq_khz: number; station?: string; demod_mode: DemodMode; bandwidth: number }) => {
     const entry = manualEntries.add(params);
     const broadcast = manualEntries.toBroadcast(entry);
+    setTuneSource('manual');
     handleTune(broadcast);
   }, [manualEntries, handleTune]);
 
@@ -508,7 +550,8 @@ function MainView() {
         peakShiftRef={peakShiftRef}
         tunedFreqKhz={tunedBroadcast?.freq_khz ?? null}
         centerFreqHz={deviceCenterHz}
-        spanHz={deviceSampleRate}
+        spanHz={effectiveSpanHz}
+        hardwareSpanHz={hardwareSpanHz}
         vfoFreqHz={tunedBroadcast?.freq_hz ?? null}
         nearbyBroadcasts={nearbyBroadcasts}
         onExpandedChange={handleSpectrumExpandedChange}
@@ -593,6 +636,7 @@ function MainView() {
               tunedBroadcast={tunedBroadcast}
               power={power}
               snr={snr}
+              tuneSource={tuneSource}
               recordings={recording.recordings}
               onAdd={log.add}
               onRemove={log.remove}

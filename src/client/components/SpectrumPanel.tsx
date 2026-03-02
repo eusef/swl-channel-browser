@@ -13,15 +13,17 @@ interface SpectrumPanelProps {
   tunedFreqKhz: number | null;
   /** Device center frequency in Hz (true center of spectrum span) */
   centerFreqHz: number | null;
-  /** Spectrum span in Hz (from device_sample_rate, defaults to 1 MHz) */
+  /** Display span in Hz (may be cropped by software zoom) */
   spanHz?: number | null;
+  /** Full hardware FFT span in Hz (before zoom crop) */
+  hardwareSpanHz?: number | null;
   /** VFO frequency in Hz (where the radio is tuned) */
   vfoFreqHz: number | null;
   nearbyBroadcasts?: Broadcast[];
   onExpandedChange: (expanded: boolean) => void;
   onTuneToFreq?: (freqHz: number) => void;
   onDragEnd?: (deltaHz: number) => void;
-  onZoomChange?: (sampleRateHz: number) => void;
+  onZoomChange?: (spanHz: number) => void;
 }
 
 export default function SpectrumPanel({
@@ -31,6 +33,7 @@ export default function SpectrumPanel({
   tunedFreqKhz,
   centerFreqHz,
   spanHz,
+  hardwareSpanHz,
   vfoFreqHz,
   nearbyBroadcasts = [],
   onExpandedChange,
@@ -69,6 +72,7 @@ export default function SpectrumPanel({
   if (tunedFreqKhz === null) return null;
 
   const currentZoomHz = spanHz ?? 1_000_000;
+  const hwSpan = hardwareSpanHz ?? spanHz ?? 1_000_000;
 
   return (
     <div className="border-b border-slate-700">
@@ -82,7 +86,7 @@ export default function SpectrumPanel({
         </button>
         {expanded && onZoomChange && (
           <div className="pr-2">
-            <ZoomBar currentZoomHz={currentZoomHz} onZoomChange={onZoomChange} />
+            <ZoomBar currentZoomHz={currentZoomHz} onZoomChange={onZoomChange} maxZoomHz={hwSpan} />
           </div>
         )}
       </div>
@@ -96,6 +100,7 @@ export default function SpectrumPanel({
             visible={expanded}
             centerFreqHz={centerFreqHz}
             spanHz={spanHz}
+            hardwareSpanHz={hwSpan}
             vfoFreqHz={vfoFreqHz}
             nearbyBroadcasts={nearbyBroadcasts}
             onTuneToFreq={onTuneToFreq}
@@ -111,6 +116,7 @@ export default function SpectrumPanel({
             visible={expanded}
             centerFreqHz={centerFreqHz}
             spanHz={spanHz}
+            hardwareSpanHz={hwSpan}
             vfoFreqHz={vfoFreqHz}
             onTuneToFreq={onTuneToFreq}
             onDragEnd={onDragEnd}

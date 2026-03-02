@@ -44,7 +44,9 @@ export async function fetchEibiCsv(url: string, maxAgeMs: number): Promise<strin
     throw new Error(`Failed to fetch EiBi CSV: ${response.status} ${response.statusText}`);
   }
 
-  const text = await response.text();
+  // EiBi CSV is Latin-1 encoded; decode explicitly to preserve accented characters
+  const buf = await response.arrayBuffer();
+  const text = new TextDecoder('latin1').decode(buf);
   fs.writeFileSync(CSV_PATH, text, 'utf-8');
   console.log(`EiBi CSV saved to ${CSV_PATH} (${text.length} bytes)`);
   return text;

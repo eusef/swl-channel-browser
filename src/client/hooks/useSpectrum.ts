@@ -34,9 +34,14 @@ export function useSpectrum(
     client.startSpectrum();
 
     // Subscribe to spectrum frames
+    let loggedBinCount = false;
     const unsub = client.onSpectrumData((bins: Uint8Array) => {
       binsRef.current = bins;
       frameCountRef.current += 1;
+      if (!loggedBinCount) {
+        console.log(`[SDR] Spectrum bins: ${bins.length}`);
+        loggedBinCount = true;
+      }
     });
 
     return () => {

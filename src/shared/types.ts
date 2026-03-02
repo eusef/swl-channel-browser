@@ -33,6 +33,8 @@ export interface Favorite {
   added_at: string;
 }
 
+export type LogSource = 'schedule' | 'manual' | 'waterfall' | 'unknown';
+
 export interface ReceptionLogEntry {
   id: string;
   freq_khz: number;
@@ -42,6 +44,7 @@ export interface ReceptionLogEntry {
   signal_power: number | null;
   signal_snr: number | null;
   notes: string;
+  source: LogSource;
   logged_at: string;
 }
 

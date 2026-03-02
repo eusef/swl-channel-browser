@@ -9,7 +9,9 @@ const LOG_PATH = path.resolve(__dirname, '../../../data/reception-log.json');
 
 export function loadLog(): ReceptionLogEntry[] {
   try {
-    return JSON.parse(fs.readFileSync(LOG_PATH, 'utf-8'));
+    const raw = JSON.parse(fs.readFileSync(LOG_PATH, 'utf-8')) as ReceptionLogEntry[];
+    // Migrate legacy entries that lack a source field
+    return raw.map(e => ({ ...e, source: e.source || 'schedule' }));
   } catch {
     return [];
   }
@@ -62,6 +64,7 @@ export function exportCsv(): string {
     'Target',
     'Signal (dBm)',
     'SNR (dB)',
+    'Source',
     'Notes',
   ];
 
@@ -73,6 +76,7 @@ export function exportCsv(): string {
     e.target,
     e.signal_power !== null ? String(e.signal_power) : '',
     e.signal_snr !== null ? String(e.signal_snr) : '',
+    e.source || 'schedule',
     escapeCsvField(e.notes),
   ]);
 

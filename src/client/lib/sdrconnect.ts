@@ -29,8 +29,11 @@ export class SDRConnectClient {
   /** Device center frequency in Hz (the true center of the spectrum span) */
   private _deviceCenterHz: number | null = null;
 
-  /** Device sample rate in Hz (determines spectrum span width) */
+  /** Device (hardware) sample rate in Hz */
   private _deviceSampleRate: number | null = null;
+
+  /** IQ sample rate in Hz (post-decimation, determines actual spectrum span) */
+  private _iqSampleRate: number | null = null;
 
   /** All SDR properties received from SDRconnect (initial dump + live updates) */
   private _properties = new Map<string, string>();
@@ -195,6 +198,11 @@ export class SDRConnectClient {
     return this._deviceSampleRate;
   }
 
+  /** Get the IQ sample rate in Hz (post-decimation spectrum span, null if not yet received) */
+  getIqSampleRate(): number | null {
+    return this._iqSampleRate;
+  }
+
   /** Get a single SDR property value (returns undefined if not yet received) */
   getPropertyValue(property: string): string | undefined {
     return this._properties.get(property);
@@ -225,13 +233,10 @@ export class SDRConnectClient {
   private static readonly ZERO_IF_THRESHOLD_HZ = 2000000;
 
   tune(freqHz: number): void {
-    // Set VFO frequency, then center the spectrum display near it.
+    // Set center frequency FIRST, then VFO. SDRconnect auto-adjusts VFO
+    // when center changes (preserving the old VFO-center offset), so we
+    // must send VFO second to override that adjustment.
     // Both writes are supported as of SDRconnect 1.0.7.
-    this.send({
-      event_type: 'set_property',
-      property: 'device_vfo_frequency',
-      value: String(freqHz),
-    });
 
     // In Zero-IF mode (sample rate > 2 MHz), offset center frequency to avoid
     // the DC spike. In Low-IF mode (≤ 2 MHz), center directly on the VFO.
@@ -239,10 +244,17 @@ export class SDRConnectClient {
     const centerHz = sampleRate > SDRConnectClient.ZERO_IF_THRESHOLD_HZ
       ? freqHz + SDRConnectClient.DC_OFFSET_HZ
       : freqHz;
+    console.log(`[SDR tune] vfo=${freqHz} Hz, center=${centerHz} Hz, sampleRate=${sampleRate} Hz`);
     this.send({
       event_type: 'set_property',
       property: 'device_center_frequency',
       value: String(centerHz),
+    });
+
+    this.send({
+      event_type: 'set_property',
+      property: 'device_vfo_frequency',
+      value: String(freqHz),
     });
   }
 
@@ -322,8 +334,10 @@ export class SDRConnectClient {
       const msg = JSON.parse(data);
       const { event_type, property, value } = msg;
 
-      // Log first 50 text messages with full detail, and always log get_property_response
-      if (this._textMsgCount < 50 || event_type === 'get_property_response') {
+      // Log first 50 text messages with full detail, plus always log property changes
+      // for key properties (VFO, center freq) regardless of count
+      const isKeyProp = property === 'device_vfo_frequency' || property === 'device_center_frequency';
+      if (this._textMsgCount < 50 || isKeyProp) {
         console.log('[SDR WS]', JSON.stringify(msg));
         this._textMsgCount++;
       }
@@ -355,6 +369,8 @@ export class SDRConnectClient {
           this._deviceCenterHz = parseFloat(value);
         } else if (property === 'device_sample_rate') {
           this._deviceSampleRate = parseFloat(value);
+        } else if (property === 'iq_sample_rate') {
+          this._iqSampleRate = parseFloat(value);
         } else if (property === 'signal_power') {
           const power = parseFloat(value);
           this.signalCallbacks.forEach(cb => cb(power, NaN));

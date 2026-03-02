@@ -110,12 +110,17 @@ Last updated: 2026-03-02
 - Solar flux and geomagnetic data from NOAA
 - Per-band condition badges (Good/Fair/Poor)
 
-## Reception Log
+## Reception Log (Issues #7/#9)
 
-- Log receptions with auto-captured signal metrics
+- Log receptions from any source: EiBi schedule, manual entry, or waterfall tune
+- Source tracking with colored badges (Schedule/Manual/Waterfall)
+- Editable station name for ad-hoc and waterfall entries
+- Auto-captured signal metrics (power dBm, SNR dB)
 - Personal notes per entry
-- Export log as CSV
+- Source column in CSV export
+- Backward-compatible: existing log entries default to "schedule" source
 - Recording playback and download from log page
+- Correct Unicode rendering for international station names (Latin-1 decoding fix)
 
 ## Platform and UX
 
@@ -134,4 +139,4 @@ Last updated: 2026-03-02
 
 ## Planned (Not Yet Implemented)
 
-- Reception log support for ad-hoc and waterfall-tuned stations (Issue #7)
+- Settings persistence: save/restore/export/import SDR control values (Issue #16)

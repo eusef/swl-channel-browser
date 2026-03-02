@@ -17,21 +17,23 @@ router.get('/', (_req: Request, res: Response) => {
 
 // Add a log entry
 router.post('/', (req: Request, res: Response) => {
-  const { freq_khz, station, language, target, signal_power, signal_snr, notes } = req.body;
+  const { freq_khz, station, language, target, signal_power, signal_snr, notes, source } = req.body;
 
-  if (!freq_khz || !station) {
-    res.status(400).json({ error: 'freq_khz and station are required' });
+  if (!freq_khz) {
+    res.status(400).json({ error: 'freq_khz is required' });
     return;
   }
 
+  const validSources = ['schedule', 'manual', 'waterfall', 'unknown'];
   const entry = addLogEntry({
     freq_khz,
-    station,
+    station: station || '',
     language: language || '',
     target: target || '',
     signal_power: signal_power ?? null,
     signal_snr: signal_snr ?? null,
     notes: notes || '',
+    source: validSources.includes(source) ? source : 'unknown',
   });
   res.status(201).json(entry);
 });
