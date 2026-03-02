@@ -65,7 +65,7 @@ function MainView() {
     fetchConfig().then(setConfig).catch(console.error);
   }, []);
 
-  const { status, getClient } = useWebSocket();
+  const { status, getClient, versionError } = useWebSocket(config?.device_serial);
   const { filters, available, setFilter, clearFilters } = useFilters();
   const { broadcasts, loading, error } = useSchedule(filters, viewMode, lookaheadHours);
   const { power, snr } = useSignal(getClient, status);
@@ -356,6 +356,15 @@ function MainView() {
           >
             Check Settings
           </button>
+        </div>
+      )}
+
+      {versionError && status === 'connected' && (
+        <div className="bg-amber-900/80 border-b border-amber-700 px-4 py-2">
+          <p className="text-amber-200 text-sm">
+            SDRconnect 1.0.7 or later is required. The connected server did not respond to device selection.
+            Please upgrade SDRconnect and restart.
+          </p>
         </div>
       )}
 

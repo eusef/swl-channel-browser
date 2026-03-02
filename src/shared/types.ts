@@ -55,6 +55,7 @@ export interface AppConfig {
   auto_play_audio: boolean;
   nrspst_ip: string;
   signal_check_dwell_seconds: number;
+  device_serial: string;
 }
 
 export type BandCondition = 'good' | 'fair' | 'poor' | 'unknown';

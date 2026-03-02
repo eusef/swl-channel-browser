@@ -149,6 +149,21 @@ export default function SettingsPage({ onConfigChange, getClient, connectionStat
         </div>
 
         <div>
+          <label className="block text-sm text-slate-400 mb-1">Device Serial Number (optional)</label>
+          <input
+            type="text"
+            value={config.device_serial}
+            onChange={(e) => update({ device_serial: e.target.value.trim() })}
+            placeholder="e.g., 2405169050"
+            className="w-full bg-slate-700 text-slate-200 rounded px-3 py-2 text-sm border border-slate-600 placeholder:text-slate-500"
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Select a specific SDR device by serial number. Leave blank to auto-select the first available device.
+            Requires SDRconnect 1.0.7+. Restart the app after changing.
+          </p>
+        </div>
+
+        <div>
           <label className="block text-sm text-slate-400 mb-1">Antenna Port</label>
           <select
             value={antennaPort}

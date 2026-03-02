@@ -3,9 +3,16 @@ import { SDRConnectClient } from '../lib/sdrconnect';
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
 
-export function useWebSocket() {
+export function useWebSocket(deviceSerial?: string) {
   const clientRef = useRef<SDRConnectClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
+  const [versionError, setVersionError] = useState(false);
+  const deviceSerialRef = useRef(deviceSerial || '');
+
+  // Keep the serial ref in sync so reconnects use the latest value
+  useEffect(() => {
+    deviceSerialRef.current = deviceSerial || '';
+  }, [deviceSerial]);
 
   useEffect(() => {
     // Reuse existing client (handles StrictMode double-mount)
@@ -18,10 +25,15 @@ export function useWebSocket() {
 
     client.onConnectionChange((connected) => {
       setStatus(connected ? 'connected' : 'disconnected');
+      if (connected) setVersionError(false);
+    });
+
+    client.onVersionError(() => {
+      setVersionError(true);
     });
 
     setStatus('connecting');
-    client.connect();
+    client.connect(deviceSerialRef.current);
 
     // Page lifecycle for mobile Safari bfcache
     const handlePageHide = () => {
@@ -31,7 +43,7 @@ export function useWebSocket() {
     const handlePageShow = (e: PageTransitionEvent) => {
       if (e.persisted) {
         setStatus('connecting');
-        client.connect();
+        client.connect(deviceSerialRef.current);
       }
     };
 
@@ -58,5 +70,5 @@ export function useWebSocket() {
 
   const getClient = useCallback(() => clientRef.current, []);
 
-  return { status, getClient };
+  return { status, getClient, versionError };
 }

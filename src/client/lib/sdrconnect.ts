@@ -5,6 +5,7 @@ type PropertyCallback = (prop: string, value: string) => void;
 type AudioCallback = (samples: Int16Array) => void;
 type SpectrumCallback = (bins: Uint8Array) => void;
 type ConnectionCallback = (connected: boolean) => void;
+type VersionErrorCallback = () => void;
 
 const SPECTRUM_HEADER = 0x0003;
 
@@ -22,6 +23,8 @@ export class SDRConnectClient {
   private audioCallbacks: AudioCallback[] = [];
   private spectrumCallbacks: SpectrumCallback[] = [];
   private connectionCallbacks: ConnectionCallback[] = [];
+  private versionErrorCallbacks: VersionErrorCallback[] = [];
+  private _versionCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Device center frequency in Hz (the true center of the spectrum span) */
   private _deviceCenterHz: number | null = null;
@@ -29,14 +32,26 @@ export class SDRConnectClient {
   /** Device sample rate in Hz (determines spectrum span width) */
   private _deviceSampleRate: number | null = null;
 
+  /** All SDR properties received from SDRconnect (initial dump + live updates) */
+  private _properties = new Map<string, string>();
+
+  /** Device serial number for selection (empty string = use index 0) */
+  private _deviceSerial = '';
+
+  /** Whether we've already sent a device selection command this session */
+  private _deviceSelectionSent = false;
+
   // Diagnostic: log first few text messages to understand SDRconnect event format
   private _textMsgCount = 0;
 
-  connect(): void {
+  connect(deviceSerial?: string): void {
     // Always connect through the backend proxy
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     this.wsUrl = `${protocol}//${window.location.host}/ws/sdr`;
     this.reconnectDelay = 1000;
+    if (deviceSerial !== undefined) {
+      this._deviceSerial = deviceSerial;
+    }
     this._connect();
   }
 
@@ -54,9 +69,17 @@ export class SDRConnectClient {
         this._connected = true;
         this.reconnectDelay = 1000;
         this._textMsgCount = 0;
+        this._properties.clear();
+        this._deviceSelectionSent = false;
         this.connectionCallbacks.forEach(cb => cb(true));
 
-        // Read initial state
+        // Version/connectivity check: if we don't receive any property data
+        // within 5 seconds, the server is likely < 1.0.7 or misconfigured.
+        this.startVersionCheck();
+
+        // Read initial state. The response to device_vfo_frequency tells us
+        // whether a device is already active (GUI mode) or needs selection
+        // (headless mode). See handleTextMessage for the follow-up logic.
         this.getProperty('device_vfo_frequency');
         this.getProperty('device_center_frequency');
         this.getProperty('device_sample_rate');
@@ -110,6 +133,25 @@ export class SDRConnectClient {
     }
   }
 
+  private startVersionCheck(): void {
+    this.cancelVersionCheck();
+    this._versionCheckTimer = setTimeout(() => {
+      // If we haven't received any property data at all, the server is not
+      // responding to our requests - likely < 1.0.7 or WebSocket API disabled.
+      if (this._properties.size === 0) {
+        console.warn('[SDR] Version check failed: no property data received. SDRconnect >= 1.0.7 is required.');
+        this.versionErrorCallbacks.forEach(cb => cb());
+      }
+    }, 5000);
+  }
+
+  private cancelVersionCheck(): void {
+    if (this._versionCheckTimer) {
+      clearTimeout(this._versionCheckTimer);
+      this._versionCheckTimer = null;
+    }
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
     this.reconnectTimer = setTimeout(() => {
@@ -121,6 +163,7 @@ export class SDRConnectClient {
 
   disconnect(): void {
     this.stopSignalPolling();
+    this.cancelVersionCheck();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -152,6 +195,16 @@ export class SDRConnectClient {
     return this._deviceSampleRate;
   }
 
+  /** Get a single SDR property value (returns undefined if not yet received) */
+  getPropertyValue(property: string): string | undefined {
+    return this._properties.get(property);
+  }
+
+  /** Get all stored SDR properties as a plain object snapshot */
+  getAllProperties(): Record<string, string> {
+    return Object.fromEntries(this._properties);
+  }
+
   private send(msg: object): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
@@ -162,25 +215,42 @@ export class SDRConnectClient {
     this.send({ event_type: 'get_property', property });
   }
 
+  /** DC spike offset in Hz. At sample rates > 2 MHz, SDRconnect uses Zero-IF
+   *  mode which places a DC spike at the center frequency. Software removes it,
+   *  but it also removes any signal there. Offset the center by 11 kHz (matching
+   *  SDRuno behavior) so the tuned signal avoids the spike. At ≤ 2 MHz, Low-IF
+   *  mode is used and no offset is needed. */
+  private static readonly DC_OFFSET_HZ = 11000;
+  private static readonly ZERO_IF_THRESHOLD_HZ = 2000000;
+
   tune(freqHz: number): void {
-    // SDRconnect recenters the display on every VFO change that falls outside
-    // the current visible span, placing the VFO at ~10% from the left edge.
-    // This position is well within the usable bandwidth (100kHz from edge in
-    // a 1 MHz span) so reception quality is not affected. The WebSocket API
-    // does not support setting device_center_frequency, so we cannot control
-    // where the VFO appears on the display.
+    // Set VFO frequency, then center the spectrum display near it.
+    // Both writes are supported as of SDRconnect 1.0.7.
     this.send({
       event_type: 'set_property',
       property: 'device_vfo_frequency',
       value: String(freqHz),
     });
-    // Re-read center frequency after a short delay (SDRconnect may recentre)
-    setTimeout(() => this.getProperty('device_center_frequency'), 200);
+
+    // In Zero-IF mode (sample rate > 2 MHz), offset center frequency to avoid
+    // the DC spike. In Low-IF mode (≤ 2 MHz), center directly on the VFO.
+    const sampleRate = this._deviceSampleRate || 0;
+    const centerHz = sampleRate > SDRConnectClient.ZERO_IF_THRESHOLD_HZ
+      ? freqHz + SDRConnectClient.DC_OFFSET_HZ
+      : freqHz;
+    this.send({
+      event_type: 'set_property',
+      property: 'device_center_frequency',
+      value: String(centerHz),
+    });
   }
 
-  setCenterFrequency(_freqHz: number): void {
-    // NOTE: SDRconnect ignores device_center_frequency via WebSocket API.
-    // This method is kept for API compatibility but is a no-op.
+  setCenterFrequency(freqHz: number): void {
+    this.send({
+      event_type: 'set_property',
+      property: 'device_center_frequency',
+      value: String(freqHz),
+    });
   }
 
   setDemodulator(mode: DemodMode): void {
@@ -196,6 +266,29 @@ export class SDRConnectClient {
       event_type: 'set_property',
       property: 'filter_bandwidth',
       value: String(hz),
+    });
+  }
+
+  setSampleRate(hz: number): void {
+    this.send({
+      event_type: 'set_property',
+      property: 'device_sample_rate',
+      value: String(hz),
+    });
+  }
+
+  /** Select device by index (e.g. "0") or serial number */
+  selectDevice(identifier: string, method: 'index' | 'serial' = 'index'): void {
+    const eventType = method === 'serial' ? 'selected_device_serial' : 'selected_device';
+    this.send({ event_type: eventType, value: identifier });
+  }
+
+  /** Generic property setter for SDRconnect properties */
+  setProperty(property: string, value: string): void {
+    this.send({
+      event_type: 'set_property',
+      property,
+      value,
     });
   }
 
@@ -235,6 +328,26 @@ export class SDRConnectClient {
       }
 
       if (event_type === 'property_changed' || event_type === 'get_property_response') {
+        // Store every property for full state access
+        if (property && value !== undefined) {
+          this._properties.set(property, value);
+        }
+
+        // Any property response confirms the server is alive, cancel version check
+        this.cancelVersionCheck();
+
+        // If VFO frequency is "0", no device is active (headless mode).
+        // Send device selection to open and start streaming.
+        if (property === 'device_vfo_frequency' && value === '0' && !this._deviceSelectionSent) {
+          this._deviceSelectionSent = true;
+          console.log('[SDR] No active device detected (VFO=0), sending device selection');
+          if (this._deviceSerial) {
+            this.selectDevice(this._deviceSerial, 'serial');
+          } else {
+            this.selectDevice('0', 'index');
+          }
+        }
+
         this.propertyCallbacks.forEach(cb => cb(property, value));
 
         if (property === 'device_center_frequency') {
@@ -306,6 +419,14 @@ export class SDRConnectClient {
     this.connectionCallbacks.push(cb);
     return () => {
       this.connectionCallbacks = this.connectionCallbacks.filter(c => c !== cb);
+    };
+  }
+
+  /** Fires if SDRconnect appears to be < 1.0.7 (no "started" property after device selection) */
+  onVersionError(cb: VersionErrorCallback): () => void {
+    this.versionErrorCallbacks.push(cb);
+    return () => {
+      this.versionErrorCallbacks = this.versionErrorCallbacks.filter(c => c !== cb);
     };
   }
 }

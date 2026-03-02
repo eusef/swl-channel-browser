@@ -18,6 +18,7 @@ function getDefaults(): AppConfig {
     auto_play_audio: false,
     nrspst_ip: '',
     signal_check_dwell_seconds: 2,
+    device_serial: '',
   };
 }
 

@@ -93,6 +93,12 @@ Connect via WebSocket to `ws://<host>:5454/`. The API uses JSON text messages fo
 | `signal_power` | Yes | No | dBm string | Signal power level |
 | `signal_snr` | Yes | No | dB string | Signal-to-noise ratio |
 
+### DC Spike / Zero-IF Mode (from SDRplay team, March 2026)
+
+At sample rates > 2 MHz, SDRconnect uses Zero-IF mode. This places a DC spike at the center frequency. A software loop removes the spike, but it also removes any signal sitting at center. At sample rates of 2 MHz and below, Low-IF mode is used and there is no DC spike.
+
+**Workaround:** Offset `device_center_frequency` from `device_vfo_frequency` by ~11 kHz (matching SDRuno behavior) when the sample rate exceeds 2 MHz. The app applies this automatically in `sdrconnect.ts`.
+
 ### Event Types (from official API doc v1.0.1)
 
 **Property operations:**

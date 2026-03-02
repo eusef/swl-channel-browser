@@ -1,6 +1,6 @@
 # SWL Channel Browser - Features
 
-Last updated: 2026-02-27
+Last updated: 2026-03-01
 
 ## Schedule Browsing
 
@@ -13,6 +13,8 @@ Last updated: 2026-02-27
 ## Tuning and Audio
 
 - One-tap tuning from schedule, favorites, or manual entry
+- VFO + center frequency tuning (spectrum centers on tuned station)
+- DC spike avoidance for Zero-IF mode (auto 11 kHz offset at sample rates > 2 MHz)
 - Automatic demod mode selection (AM, SAM, USB, LSB, CW, NFM, WFM)
 - Automatic bandwidth selection per mode
 - Live demod mode switching from the now-playing bar
@@ -86,6 +88,10 @@ Last updated: 2026-02-27
 - nRSP-ST "Advanced Controls" link to built-in web UI (port 9001)
 - Antenna port selection for multi-port receivers (RSPdx-R2, RSPduo)
 - Time format toggle (UTC/local)
+- Device serial number selection for multi-device setups
+- Automatic device selection on WebSocket connect (SDRconnect 1.0.7+)
+- SDRconnect version detection with upgrade warning for < 1.0.7
+- Full SDR property state capture on connect (~35 properties)
 
 ## Planned (Not Yet Implemented)
 
