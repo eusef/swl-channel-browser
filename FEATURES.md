@@ -84,6 +84,24 @@ Last updated: 2026-03-02
 - Connects through the app's WebSocket proxy (requires dev server running)
 - Usable against GUI or headless SDRconnect instances
 
+## Frequency Tweak Bar (Issue #14)
+
+- Collapsible panel with +/- buttons for precise frequency stepping
+- Step size selector: 100Hz, 1kHz, 5kHz, 9kHz, 10kHz (pill buttons)
+- Long-press +/- for continuous stepping (150ms repeat)
+- Current frequency display with kHz/MHz formatting
+- Step size persisted in localStorage
+- Left/Right arrow keyboard shortcuts for frequency adjustment
+- Bypasses tune debounce for responsive rapid stepping
+
+## Passband Zoom (Issue #15)
+
+- Zoom presets in spectrum panel header: 2M, 1M, 500k, 200k, 100k, 50k
+- Changes device sample rate to narrow/widen the visible spectrum
+- Scroll wheel on spectrum/waterfall to zoom in/out (200ms debounce)
+- +/- keyboard shortcuts for zoom stepping
+- Active preset highlighted in the zoom bar
+
 ## Signal and Propagation
 
 - Live signal power (dBm) and SNR (dB) meter

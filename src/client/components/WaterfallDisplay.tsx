@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { pixelToFreqHz, freqHzToPixel, formatFreqHz, DEFAULT_SPAN_HZ } from '../lib/spectrumUtils';
+import { stepZoom } from './ZoomBar';
 
 interface WaterfallDisplayProps {
   binsRef: React.RefObject<Uint8Array | null>;
@@ -11,6 +12,7 @@ interface WaterfallDisplayProps {
   vfoFreqHz: number | null;
   onTuneToFreq?: (freqHz: number) => void;
   onDragEnd?: (deltaHz: number) => void;
+  onZoomChange?: (sampleRateHz: number) => void;
   sharedDragOffsetRef: React.RefObject<number>;
   onDragOffsetChange: (px: number) => void;
 }
@@ -61,6 +63,7 @@ export default function WaterfallDisplay({
   vfoFreqHz,
   onTuneToFreq,
   onDragEnd,
+  onZoomChange,
   sharedDragOffsetRef,
   onDragOffsetChange,
 }: WaterfallDisplayProps) {
@@ -297,6 +300,28 @@ export default function WaterfallDisplay({
     pointerDownRef.current = null;
     isDraggingRef.current = false;
   }, [drawOverlayWithCursor, onDragEnd, centerFreqHz, spanHz, sharedDragOffsetRef, onDragOffsetChange]);
+
+  // Scroll-to-zoom handler
+  useEffect(() => {
+    if (!onZoomChange) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    let wheelTimer: ReturnType<typeof setTimeout> | null = null;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (wheelTimer) return;
+      const direction: -1 | 1 = e.deltaY < 0 ? -1 : 1;
+      const spanHzNow = spanHzProp ?? DEFAULT_SPAN_HZ;
+      onZoomChange(stepZoom(spanHzNow, direction));
+      wheelTimer = setTimeout(() => { wheelTimer = null; }, 200);
+    };
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      if (wheelTimer) clearTimeout(wheelTimer);
+    };
+  }, [onZoomChange, spanHzProp]);
 
   // Animation loop: adds waterfall lines when not dragging, updates overlay when dragging
   useEffect(() => {

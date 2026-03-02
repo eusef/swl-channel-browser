@@ -32,6 +32,9 @@ import GainPanel from './components/GainPanel';
 import AudioPanel from './components/AudioPanel';
 import FilterPanel from './components/FilterPanel';
 import SpectrumControlPanel from './components/SpectrumControlPanel';
+import FrequencyTweakBar from './components/FrequencyTweakBar';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { STORAGE_KEY as FREQ_STEP_STORAGE_KEY, STEP_OPTIONS } from './components/FrequencyTweakBar';
 import Toast from './components/Toast';
 
 type ViewMode = 'now' | 'upcoming';
@@ -317,6 +320,49 @@ function MainView() {
     lastTunedFreqRef.current = newFreqKhz;
   }, [getClient, tunedBroadcast]);
 
+  // Frequency tweak: bypass handleTune debounce for responsive stepping
+  const handleFrequencyAdjust = useCallback((deltaHz: number) => {
+    const client = getClient();
+    if (!client || !tunedBroadcast) return;
+
+    const newHz = Math.max(1000, tunedBroadcast.freq_hz + deltaHz);
+    client.tune(newHz);
+    setTunedBroadcast(prev => prev ? {
+      ...prev,
+      freq_hz: newHz,
+      freq_khz: newHz / 1000,
+      station: '',
+    } : null);
+    lastTunedFreqRef.current = newHz / 1000;
+  }, [getClient, tunedBroadcast]);
+
+  // Zoom: change device sample rate
+  const handleZoomChange = useCallback((sampleRateHz: number) => {
+    const client = getClient();
+    if (!client) return;
+    client.setSampleRate(sampleRateHz);
+  }, [getClient]);
+
+  // Read current step size for keyboard shortcuts
+  const currentStepHz = (() => {
+    try {
+      const saved = localStorage.getItem(FREQ_STEP_STORAGE_KEY);
+      if (saved) {
+        const n = parseInt(saved);
+        if (STEP_OPTIONS.some(s => s.hz === n)) return n;
+      }
+    } catch { /* ignore */ }
+    return 1000;
+  })();
+
+  useKeyboardShortcuts({
+    active: tunedBroadcast !== null,
+    stepHz: currentStepHz,
+    currentZoomHz: deviceSampleRate ?? 1_000_000,
+    onFrequencyAdjust: handleFrequencyAdjust,
+    onZoomChange: handleZoomChange,
+  });
+
   const handleManualTune = useCallback((params: { freq_khz: number; station?: string; demod_mode: DemodMode; bandwidth: number }) => {
     const entry = manualEntries.add(params);
     const broadcast = manualEntries.toBroadcast(entry);
@@ -450,6 +496,12 @@ function MainView() {
         onSpectrumBaseChange={sdrControls.setSpectrumBase}
       />
 
+      <FrequencyTweakBar
+        freqHz={tunedBroadcast?.freq_hz ?? null}
+        connected={status === 'connected'}
+        onAdjust={handleFrequencyAdjust}
+      />
+
       <SpectrumPanel
         binsRef={binsRef}
         frameCountRef={frameCountRef}
@@ -462,6 +514,7 @@ function MainView() {
         onExpandedChange={handleSpectrumExpandedChange}
         onTuneToFreq={handleSpectrumTune}
         onDragEnd={handleSpectrumDragEnd}
+        onZoomChange={handleZoomChange}
       />
 
       <ManualTuneForm

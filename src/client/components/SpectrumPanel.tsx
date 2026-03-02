@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Broadcast } from '../../shared/types';
 import SpectrumDisplay from './SpectrumDisplay';
 import WaterfallDisplay from './WaterfallDisplay';
+import ZoomBar from './ZoomBar';
 
 const STORAGE_KEY = 'swl-spectrum-expanded';
 
@@ -20,6 +21,7 @@ interface SpectrumPanelProps {
   onExpandedChange: (expanded: boolean) => void;
   onTuneToFreq?: (freqHz: number) => void;
   onDragEnd?: (deltaHz: number) => void;
+  onZoomChange?: (sampleRateHz: number) => void;
 }
 
 export default function SpectrumPanel({
@@ -34,6 +36,7 @@ export default function SpectrumPanel({
   onExpandedChange,
   onTuneToFreq,
   onDragEnd,
+  onZoomChange,
 }: SpectrumPanelProps) {
   const [expanded, setExpanded] = useState(() => {
     try {
@@ -65,15 +68,24 @@ export default function SpectrumPanel({
 
   if (tunedFreqKhz === null) return null;
 
+  const currentZoomHz = spanHz ?? 1_000_000;
+
   return (
     <div className="border-b border-slate-700">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-1.5 text-xs text-slate-400 hover:text-slate-300 transition-colors bg-slate-800/50"
-      >
-        <span className="font-medium">Spectrum</span>
-        <span className="text-[10px]">{expanded ? '▾' : '▸'}</span>
-      </button>
+      <div className="flex items-center justify-between bg-slate-800/50">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 px-4 py-1.5 text-xs text-slate-400 hover:text-slate-300 transition-colors"
+        >
+          <span className="font-medium">Spectrum</span>
+          <span className="text-[10px]">{expanded ? '▾' : '▸'}</span>
+        </button>
+        {expanded && onZoomChange && (
+          <div className="pr-2">
+            <ZoomBar currentZoomHz={currentZoomHz} onZoomChange={onZoomChange} />
+          </div>
+        )}
+      </div>
 
       {expanded && (
         <div className="px-2 pb-2" style={{ touchAction: 'none', overscrollBehavior: 'contain' }}>
@@ -88,6 +100,7 @@ export default function SpectrumPanel({
             nearbyBroadcasts={nearbyBroadcasts}
             onTuneToFreq={onTuneToFreq}
             onDragEnd={onDragEnd}
+            onZoomChange={onZoomChange}
             sharedDragOffsetRef={sharedDragOffsetRef}
             onDragOffsetChange={updateDragOffset}
           />
@@ -101,6 +114,7 @@ export default function SpectrumPanel({
             vfoFreqHz={vfoFreqHz}
             onTuneToFreq={onTuneToFreq}
             onDragEnd={onDragEnd}
+            onZoomChange={onZoomChange}
             sharedDragOffsetRef={sharedDragOffsetRef}
             onDragOffsetChange={updateDragOffset}
           />

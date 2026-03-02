@@ -4,6 +4,19 @@ All notable changes to the SWL Channel Browser are documented here.
 
 ## [Unreleased]
 
+### Issues #14/#15 - Frequency Tweak Bar + Passband Zoom
+
+**Added**
+
+- `FrequencyTweakBar` component: collapsible panel with +/- buttons for precise frequency stepping (100Hz, 1kHz, 5kHz, 9kHz, 10kHz step sizes)
+- Long-press +/- for continuous stepping at 150ms intervals
+- Step size persisted in localStorage
+- `ZoomBar` component: inline zoom preset buttons in spectrum panel header (2M, 1M, 500k, 200k, 100k, 50k)
+- Scroll wheel zoom on spectrum and waterfall displays (200ms debounce)
+- `useKeyboardShortcuts` hook: Left/Right arrows for frequency adjust, +/- keys for zoom
+- Direct `client.tune()` calls for tweak bar (bypasses handleTune 300ms debounce for responsive stepping)
+- Zoom changes device sample rate via `client.setSampleRate()`
+
 ### Issue #13 - SDR WebUI Controls (Phase 1: Gain/AGC + Phase 2: Audio/Filters/Spectrum)
 
 **Added**

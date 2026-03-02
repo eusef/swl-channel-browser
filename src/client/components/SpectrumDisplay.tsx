@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { Broadcast } from '../../shared/types';
 import { pixelToFreqHz, freqHzToPixel, formatFreqHz, DEFAULT_SPAN_HZ } from '../lib/spectrumUtils';
+import { stepZoom } from './ZoomBar';
 
 interface SpectrumDisplayProps {
   binsRef: React.RefObject<Uint8Array | null>;
@@ -13,6 +14,7 @@ interface SpectrumDisplayProps {
   nearbyBroadcasts?: Broadcast[];
   onTuneToFreq?: (freqHz: number) => void;
   onDragEnd?: (deltaHz: number) => void;
+  onZoomChange?: (sampleRateHz: number) => void;
   sharedDragOffsetRef: React.RefObject<number>;
   onDragOffsetChange: (px: number) => void;
 }
@@ -41,6 +43,7 @@ export default function SpectrumDisplay({
   nearbyBroadcasts = [],
   onTuneToFreq,
   onDragEnd,
+  onZoomChange,
   sharedDragOffsetRef,
   onDragOffsetChange,
 }: SpectrumDisplayProps) {
@@ -377,6 +380,28 @@ export default function SpectrumDisplay({
     pointerDownRef.current = null;
     isDraggingRef.current = false;
   }, [drawOverlay, onDragEnd, centerFreqHz, spanHz, sharedDragOffsetRef, onDragOffsetChange]);
+
+  // Scroll-to-zoom handler
+  useEffect(() => {
+    if (!onZoomChange) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    let wheelTimer: ReturnType<typeof setTimeout> | null = null;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (wheelTimer) return;
+      const direction: -1 | 1 = e.deltaY < 0 ? -1 : 1;
+      const spanHzNow = spanHzProp ?? DEFAULT_SPAN_HZ;
+      onZoomChange(stepZoom(spanHzNow, direction));
+      wheelTimer = setTimeout(() => { wheelTimer = null; }, 200);
+    };
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      if (wheelTimer) clearTimeout(wheelTimer);
+    };
+  }, [onZoomChange, spanHzProp]);
 
   // Animation loop: redraws on new spectrum frames OR when drag offset changes
   useEffect(() => {
